@@ -82,7 +82,11 @@ def generate_dataset(
       - simulira response matricu studenata
       - padduje response matricu na `pad_to` kolona (ako je zadato)
 
-    Vraca:
+    Noise parametri:
+        - ce, lg - careless error i lucky guess (zna i pogresi, ne zna i pogodi)
+        - ce_std, lg_std - standard deviation
+
+    Return:
         responses:   list of np.array oblika (student_size, pad_to)
         adj_matrices: list of np.array oblika (pad_to, pad_to)
         item_counts: list of int - stvarni broj pitanja u svakom primeru
@@ -123,7 +127,7 @@ def generate_dataset(
         # PREDLOG: napraviti skriptu moju koja generise implikacije
         # print(implications)
 
-        # Napravi adjacency matricu
+        # Kreiranje adjacency matrice
         adj = np.zeros((n_items, n_items), dtype=np.int8)
         for (pre, item) in implications:
             adj[pre][item] = 1
@@ -141,7 +145,9 @@ def generate_dataset(
         adj_matrices.append(full_adj)
         item_counts.append(n_items)
 
-        if (idx + 1) % 500 == 0:
+        # Ispis na svakih 10%
+        log_step = max(1, num_samples // 10)
+        if (idx + 1) % log_step == 0:
             print(f"  Generisano {idx + 1}/{num_samples} primera...")
 
     return responses, adj_matrices, item_counts
@@ -188,7 +194,7 @@ def main():
     print(f"{'='*55}")
     print(f"  Broj primera:     {args.num_samples}")
     print(f"  Items:            {args.min_items} – {args.max_items}")
-    print(f"  Studenata/primer: {args.size}")
+    print(f"  Broj studenata po primeru: {args.size}")
     print(f"  Careless error:   {args.ce}")
     print(f"  Lucky guess:      {args.lg}")
     print(f"  Delta:            {args.delta}")
@@ -198,7 +204,7 @@ def main():
     print(f"  Output:           {args.output}")
     print(f"{'='*55}\n")
 
-    print("- Pocetak generacije -")
+    print("- Pocetak generisanja -")
     responses, adj_matrices, item_counts = generate_dataset(
         num_samples=args.num_samples,
         max_items=args.max_items,
@@ -211,6 +217,7 @@ def main():
         lg_std=args.lg_std,
         delta_std=args.delta_std
     )
+    print("- Kraj generisanja -")
 
     n = len(responses)
     pad = args.max_items
@@ -248,7 +255,7 @@ def main():
     print(f"  Adj matrica:\n{Y[0]}")
     unique_responses = np.unique(X[0], axis=0)
     print(f"  Unique response pattern-i: {len(unique_responses)} / {args.size}")
-    print(f"\n- Kraj. -")
+    print(f"\n- Kraj -")
 
 
 if __name__ == "__main__":
