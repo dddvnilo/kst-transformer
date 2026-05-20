@@ -79,13 +79,15 @@ def random_implications(items, min_impl=0, max_impl=None):
     Generise nasumican skup implikacija izmedju `items` pitanja.
     Implikacija (i, j) znači: j zahteva i kao prerequisit.
 
-    Koristi samo parove gde i < j (gornji trougao) — garantuje DAG,
+    Koristi samo parove gde i < j (gornji trougao) - garantuje DAG,
     nikad (i,j) i (j,i) istovremeno.
 
     Vraca:
-        impl_closed:  puno tranzitivno zatvorenje — za simu
-        impl_reduced: minimalne implikacije — za adj matricu
+        impl_closed:  puno tranzitivno zatvorenje - za simu
+        impl_reduced: minimalne implikacije - za adj matricu
     """
+
+    # TODO: nikad necemo imati (4,0) implikaciju ovo izmeniti mozda
     possible = [(i, j) for i in range(items) for j in range(i + 1, items)]
 
     if max_impl is None:
@@ -148,7 +150,7 @@ def generate_dataset(
         # Generisi implikacije
         impl_closed, impl_reduced = random_implications(n_items)
 
-        # Simuliraj odgovore — simu dobija puno tranzitivno zatvorenje
+        # Simuliraj odgovore - simu dobija puno tranzitivno zatvorenje
         try:
             result = simu(
                 items=n_items,
