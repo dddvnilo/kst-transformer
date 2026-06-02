@@ -252,7 +252,7 @@ def main():
 
     X = np.stack(responses,    axis=0)        # (N, size, pad_to)
     Y = np.stack(adj_matrices, axis=0)        # (N, pad_to, pad_to)
-    C = np.array(item_counts,  dtype=np.int8) # (N,)
+    C = np.array(item_counts,  dtype=np.int64) # (N,)
 
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
