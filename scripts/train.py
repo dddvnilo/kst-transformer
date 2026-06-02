@@ -25,9 +25,13 @@ from kst.model import KSTTransformer
 from kst.dataset import make_dataloaders, make_loss_mask
 
 
+_SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
+_ROOT_DIR    = os.path.join(_SCRIPTS_DIR, "..")
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Trening skripta")
-    parser.add_argument("--data",            type=str,   default="../data/kst_dataset.npz")
+    parser.add_argument("--data",            type=str,   default=os.path.join(_ROOT_DIR, "data", "kst_dataset.npz"))
     parser.add_argument("--epochs",          type=int,   default=50)
     parser.add_argument("--batch-size",      type=int,   default=32)
     parser.add_argument("--lr",              type=float, default=1e-3)
@@ -39,7 +43,7 @@ def parse_args():
     parser.add_argument("--val-ratio",       type=float, default=0.1)
     parser.add_argument("--test-ratio",      type=float, default=0.1)
     parser.add_argument("--seed",            type=int,   default=42)
-    parser.add_argument("--checkpoint-dir",  type=str,   default="../checkpoints")
+    parser.add_argument("--checkpoint-dir",  type=str,   default=os.path.join(_ROOT_DIR, "checkpoints"))
     return parser.parse_args()
 
 
