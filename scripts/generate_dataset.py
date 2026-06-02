@@ -17,9 +17,13 @@ Koristi:
 """
 
 import argparse
+import os
 import numpy as np
 from pathlib import Path
 from learning_spaces.kst import simu
+
+_SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
+_ROOT_DIR    = os.path.join(_SCRIPTS_DIR, "..")
 
 
 # ---------------------------------------------------------------------------
@@ -215,8 +219,8 @@ def main():
                         help="Std za CE noise (default: 0.03)")
     parser.add_argument("--lg-std",      type=float, default=0.02,
                         help="Std za LG noise (default: 0.02)")
-    parser.add_argument("--output",      type=str,   default="../data/kst_dataset.npz",
-                        help="Output fajl (.npz format, default: ../data/kst_dataset.npz)")
+    parser.add_argument("--output",      type=str,   default=os.path.join(_ROOT_DIR, "data", "kst_dataset.npz"),
+                        help="Output fajl (.npz format)")
     parser.add_argument("--seed",        type=int,   default=42,
                         help="Random seed (default: 42)")
     args = parser.parse_args()

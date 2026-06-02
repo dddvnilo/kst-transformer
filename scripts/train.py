@@ -32,7 +32,7 @@ _ROOT_DIR    = os.path.join(_SCRIPTS_DIR, "..")
 def parse_args():
     parser = argparse.ArgumentParser(description="Trening skripta")
     parser.add_argument("--data",            type=str,   default=os.path.join(_ROOT_DIR, "data", "kst_dataset.npz"))
-    parser.add_argument("--epochs",          type=int,   default=50)
+    parser.add_argument("--epochs",          type=int,   default=300)
     parser.add_argument("--batch-size",      type=int,   default=32)
     parser.add_argument("--lr",              type=float, default=1e-3)
     parser.add_argument("--d-model",         type=int,   default=64)
@@ -44,6 +44,7 @@ def parse_args():
     parser.add_argument("--test-ratio",      type=float, default=0.1)
     parser.add_argument("--seed",            type=int,   default=42)
     parser.add_argument("--checkpoint-dir",  type=str,   default=os.path.join(_ROOT_DIR, "checkpoints"))
+    parser.add_argument("--patience",        type=int,   default=15)
     return parser.parse_args()
 
 
@@ -197,6 +198,7 @@ def main():
     os.makedirs(args.checkpoint_dir, exist_ok=True)
     checkpoint_path = os.path.join(args.checkpoint_dir, "best.pt")
     best_val_loss = float("inf")
+    epochs_without_improvement = 0
 
     train_losses, val_losses = [], []
     train_f1s,    val_f1s    = [], []
@@ -218,6 +220,7 @@ def main():
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
+            epochs_without_improvement = 0
             torch.save({
                 "epoch":           epoch,
                 "model_state":     model.state_dict(),
@@ -227,6 +230,11 @@ def main():
                 "args":            vars(args),
             }, checkpoint_path)
             print(f"  -> Checkpoint sacuvan (val_loss={val_loss:.4f})")
+        else:
+            epochs_without_improvement += 1
+            if epochs_without_improvement >= args.patience:
+                print(f"\nEarly stopping - val loss se nije poboljsao {args.patience} epoha zaredom.")
+                break
 
     # Plotovi
     curves_path = os.path.join(args.checkpoint_dir, "training_curves.png")
