@@ -16,6 +16,8 @@ import sys
 
 import torch
 import torch.nn.functional as F
+import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -53,7 +55,7 @@ def compute_pos_weight(loader, max_items: int) -> float:
 
 def compute_f1(pred: torch.Tensor, target: torch.Tensor, mask: torch.Tensor) -> float:
     """F1 score samo na maskiranim celijama (ignorise padding i dijagonalu)."""
-    pred_bin   = (torch.sigmoid(pred[mask]) > 0.5)  # logit -> verovatnoca -> binarno
+    pred_bin   = (torch.sigmoid(pred[mask]) > 0.5)
     target_bin = target[mask].bool()
     tp = (pred_bin &  target_bin).sum().item()
     fp = (pred_bin & ~target_bin).sum().item()
@@ -94,6 +96,66 @@ def run_epoch(model, loader, optimizer, device, max_items, pos_weight: torch.Ten
     return avg_loss, f1
 
 
+def plot_training_curves(train_losses, val_losses, train_f1s, val_f1s, save_path):
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+
+    epochs = range(1, len(train_losses) + 1)
+
+    ax1.plot(epochs, train_losses, label="Train")
+    ax1.plot(epochs, val_losses,   label="Val")
+    ax1.set_title("Loss")
+    ax1.set_xlabel("Epoha")
+    ax1.legend()
+    ax1.grid(True)
+
+    ax2.plot(epochs, train_f1s, label="Train")
+    ax2.plot(epochs, val_f1s,   label="Val")
+    ax2.set_title("F1 Score")
+    ax2.set_xlabel("Epoha")
+    ax2.set_ylim(0, 1)
+    ax2.legend()
+    ax2.grid(True)
+
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=150)
+    plt.close()
+
+
+def plot_predictions(model, loader, device, n_examples, save_path):
+    """Prikazuje predicted vs ground truth adj matricu za n_examples primera iz test seta."""
+    model.eval()
+    X, Y, item_counts = next(iter(loader))
+    X, Y, item_counts = X.to(device), Y.to(device), item_counts.to(device)
+
+    with torch.no_grad():
+        pred = torch.sigmoid(model(X))  # verovatnoce za vizualizaciju
+
+    n = min(n_examples, X.shape[0])
+    fig = plt.figure(figsize=(4 * n, 8))
+    gs  = gridspec.GridSpec(2, n, hspace=0.4, wspace=0.3)
+
+    for i in range(n):
+        k = item_counts[i].item()
+
+        # Ground truth — samo stvarnih k x k celija
+        ax_gt = fig.add_subplot(gs[0, i])
+        ax_gt.imshow(Y[i, :k, :k].cpu(), vmin=0, vmax=1, cmap="Blues")
+        ax_gt.set_title(f"GT  (n={k})")
+        ax_gt.axis("off")
+
+        # Predikcija
+        ax_pr = fig.add_subplot(gs[1, i])
+        ax_pr.imshow(pred[i, :k, :k].cpu(), vmin=0, vmax=1, cmap="Blues")
+        ax_pr.set_title(f"Pred (n={k})")
+        ax_pr.axis("off")
+
+    fig.text(0.01, 0.75, "Ground truth", va="center", rotation="vertical", fontsize=11)
+    fig.text(0.01, 0.25, "Predikcija",   va="center", rotation="vertical", fontsize=11)
+
+    plt.savefig(save_path, dpi=150, bbox_inches="tight")
+    plt.close()
+
+
 def main():
     args = parse_args()
     torch.manual_seed(args.seed)
@@ -132,9 +194,17 @@ def main():
     checkpoint_path = os.path.join(args.checkpoint_dir, "best.pt")
     best_val_loss = float("inf")
 
+    train_losses, val_losses = [], []
+    train_f1s,    val_f1s    = [], []
+
     for epoch in range(1, args.epochs + 1):
         train_loss, train_f1 = run_epoch(model, train_loader, optimizer, device, max_items, pos_weight, train=True)
         val_loss,   val_f1   = run_epoch(model, val_loader,   optimizer, device, max_items, pos_weight, train=False)
+
+        train_losses.append(train_loss)
+        val_losses.append(val_loss)
+        train_f1s.append(train_f1)
+        val_f1s.append(val_f1)
 
         print(
             f"Epoch {epoch:>3}/{args.epochs} | "
@@ -154,11 +224,20 @@ def main():
             }, checkpoint_path)
             print(f"  -> Checkpoint sacuvan (val_loss={val_loss:.4f})")
 
+    # Plotovi
+    curves_path = os.path.join(args.checkpoint_dir, "training_curves.png")
+    plot_training_curves(train_losses, val_losses, train_f1s, val_f1s, curves_path)
+    print(f"\nKrive sacuvane: {curves_path}")
+
     # Test evaluacija sa najboljim modelom
     checkpoint = torch.load(checkpoint_path, map_location=device)
     model.load_state_dict(checkpoint["model_state"])
     test_loss, test_f1 = run_epoch(model, test_loader, optimizer, device, max_items, pos_weight, train=False)
-    print(f"\nTest | Loss: {test_loss:.4f} | F1: {test_f1:.3f}")
+    print(f"Test | Loss: {test_loss:.4f} | F1: {test_f1:.3f}")
+
+    preds_path = os.path.join(args.checkpoint_dir, "predictions.png")
+    plot_predictions(model, test_loader, device, n_examples=6, save_path=preds_path)
+    print(f"Predikcije sacuvane: {preds_path}")
 
 
 if __name__ == "__main__":

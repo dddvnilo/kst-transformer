@@ -227,7 +227,7 @@ def main():
     print(f"  KST Dataset Generator")
     print(f"{'='*55}")
     print(f"  Broj primera:            {args.num_samples}")
-    print(f"  Items:                   {args.min_items} – {args.max_items}")
+    print(f"  Items:                   {args.min_items} - {args.max_items}")
     print(f"  Broj studenata po primeru: {args.size}")
     print(f"  Careless error:          {args.ce} (std={args.ce_std})")
     print(f"  Lucky guess:             {args.lg} (std={args.lg_std})")
