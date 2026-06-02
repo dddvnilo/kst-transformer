@@ -17,7 +17,6 @@ import sys
 import torch
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -32,19 +31,19 @@ _ROOT_DIR    = os.path.join(_SCRIPTS_DIR, "..")
 def parse_args():
     parser = argparse.ArgumentParser(description="Trening skripta")
     parser.add_argument("--data",            type=str,   default=os.path.join(_ROOT_DIR, "data", "kst_dataset.npz"))
-    parser.add_argument("--epochs",          type=int,   default=300)
-    parser.add_argument("--batch-size",      type=int,   default=32)
-    parser.add_argument("--lr",              type=float, default=1e-3)
-    parser.add_argument("--d-model",         type=int,   default=64)
+    parser.add_argument("--epochs",          type=int,   default=100)
+    parser.add_argument("--batch-size",      type=int,   default=64)
+    parser.add_argument("--lr",              type=float, default=3e-4)
+    parser.add_argument("--d-model",         type=int,   default=128)
     parser.add_argument("--nhead",           type=int,   default=4)
     parser.add_argument("--num-layers",      type=int,   default=3)
     parser.add_argument("--dim-feedforward", type=int,   default=256)
-    parser.add_argument("--dropout",         type=float, default=0.1)
-    parser.add_argument("--val-ratio",       type=float, default=0.1)
+    parser.add_argument("--dropout",         type=float, default=0.2)
+    parser.add_argument("--val-ratio",       type=float, default=0.2)
     parser.add_argument("--test-ratio",      type=float, default=0.1)
     parser.add_argument("--seed",            type=int,   default=42)
     parser.add_argument("--checkpoint-dir",  type=str,   default=os.path.join(_ROOT_DIR, "checkpoints"))
-    parser.add_argument("--patience",        type=int,   default=15)
+    parser.add_argument("--patience",        type=int,   default=100)
     return parser.parse_args()
 
 
@@ -77,7 +76,7 @@ def run_epoch(model, loader, optimizer, device, max_items, pos_weight: torch.Ten
         for X, Y, item_counts in loader:
             X, Y, item_counts = X.to(device), Y.to(device), item_counts.to(device)
 
-            pred = model(X)
+            pred = model(X, item_counts)
             mask = make_loss_mask(item_counts, max_items)
 
             loss = F.binary_cross_entropy_with_logits(pred[mask], Y[mask], pos_weight=pos_weight)
@@ -123,41 +122,6 @@ def plot_training_curves(train_losses, val_losses, train_f1s, val_f1s, save_path
 
     plt.tight_layout()
     plt.savefig(save_path, dpi=150)
-    plt.close()
-
-
-def plot_predictions(model, loader, device, n_examples, save_path):
-    """Prikazuje predicted vs ground truth adj matricu za n_examples primera iz test seta."""
-    model.eval()
-    X, Y, item_counts = next(iter(loader))
-    X, Y, item_counts = X.to(device), Y.to(device), item_counts.to(device)
-
-    with torch.no_grad():
-        pred = torch.sigmoid(model(X))  # verovatnoce za vizualizaciju
-
-    n = min(n_examples, X.shape[0])
-    fig = plt.figure(figsize=(4 * n, 8))
-    gs  = gridspec.GridSpec(2, n, hspace=0.4, wspace=0.3)
-
-    for i in range(n):
-        k = item_counts[i].item()
-
-        # Ground truth — samo stvarnih k x k celija
-        ax_gt = fig.add_subplot(gs[0, i])
-        ax_gt.imshow(Y[i, :k, :k].cpu(), vmin=0, vmax=1, cmap="Blues")
-        ax_gt.set_title(f"GT  (n={k})")
-        ax_gt.axis("off")
-
-        # Predikcija
-        ax_pr = fig.add_subplot(gs[1, i])
-        ax_pr.imshow(pred[i, :k, :k].cpu(), vmin=0, vmax=1, cmap="Blues")
-        ax_pr.set_title(f"Pred (n={k})")
-        ax_pr.axis("off")
-
-    fig.text(0.01, 0.75, "Ground truth", va="center", rotation="vertical", fontsize=11)
-    fig.text(0.01, 0.25, "Predikcija",   va="center", rotation="vertical", fontsize=11)
-
-    plt.savefig(save_path, dpi=150, bbox_inches="tight")
     plt.close()
 
 
@@ -247,9 +211,6 @@ def main():
     test_loss, test_f1 = run_epoch(model, test_loader, optimizer, device, max_items, pos_weight, train=False)
     print(f"Test | Loss: {test_loss:.4f} | F1: {test_f1:.3f}")
 
-    preds_path = os.path.join(args.checkpoint_dir, "predictions.png")
-    plot_predictions(model, test_loader, device, n_examples=6, save_path=preds_path)
-    print(f"Predikcije sacuvane: {preds_path}")
 
 
 if __name__ == "__main__":

@@ -58,6 +58,7 @@ class KSTTransformer(nn.Module):
         self.encoder = nn.TransformerEncoder(
             encoder_layer,
             num_layers=num_encoder_layers,
+            enable_nested_tensor=False,
         )
 
         # ------------------------------------------------------------------
@@ -72,10 +73,11 @@ class KSTTransformer(nn.Module):
             nn.Linear(d_model, 1),
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, item_counts: torch.Tensor = None) -> torch.Tensor:
         """
-        :param x: (batch, students, items) - response matrica
-        :return:  (batch, items, items)    - logiti (primeni sigmoid za verovatnoce)
+        :param x:           (batch, students, items) - response matrica
+        :param item_counts: (batch,) int64 - stvarni broj pitanja; padding pozicije se maskiraju u attention-u
+        :return:            (batch, items, items)    - logiti (primeni sigmoid za verovatnoce)
         """
         batch_size, students, items = x.shape
 
@@ -90,8 +92,14 @@ class KSTTransformer(nn.Module):
         positions = torch.arange(items, device=x.device)          # (items,)
         x = x + self.positional_encoding(positions)                # broadcast po batchu
 
+        # Padding maska za attention: True = ignorisi ovu poziciju
+        padding_mask = None
+        if item_counts is not None:
+            idx = torch.arange(items, device=x.device)
+            padding_mask = idx.unsqueeze(0) >= item_counts.unsqueeze(1)  # (batch, items)
+
         # Transformer Encoder: (batch, items, d_model) -> (batch, items, d_model)
-        h = self.encoder(x)
+        h = self.encoder(x, src_key_padding_mask=padding_mask)
 
         # Glava - klasifikacija po parovima
         # Za svaki par (i, j) konkateniramo h_i i h_j
