@@ -91,8 +91,8 @@ def random_implications(items, min_impl=0, max_impl=None):
         impl_reduced: minimalne implikacije - za adj matricu
     """
 
-    # TODO: nikad necemo imati (4,0) implikaciju ovo izmeniti mozda
-    possible = [(i, j) for i in range(items) for j in range(i + 1, items)]
+    topo = np.random.permutation(items)
+    possible = [(int(topo[i]), int(topo[j])) for i in range(items) for j in range(i + 1, items)]
 
     if max_impl is None:
         max_impl = len(possible)
