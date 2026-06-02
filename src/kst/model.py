@@ -5,7 +5,7 @@ import torch.nn as nn
 class KSTTransformer(nn.Module):
     """
     Input:  (batch, students, items)  - binarna response matrica
-    Output: (batch, items, items)     - adj matrica prerequisita (sigmoid aktivacija)
+    Output: (batch, items, items)     - adj matrica prerequisita (logiti, bez sigmoida)
     """
 
     def __init__(
@@ -75,7 +75,7 @@ class KSTTransformer(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         :param x: (batch, students, items) - response matrica
-        :return:  (batch, items, items)    - adj matrica, vrednosti u (0,1)
+        :return:  (batch, items, items)    - logiti (primeni sigmoid za verovatnoce)
         """
         batch_size, students, items = x.shape
 
@@ -100,9 +100,8 @@ class KSTTransformer(nn.Module):
 
         pairs = torch.cat([h_i, h_j], dim=-1)           # (batch, items, items, 2*d_model)
 
-        # MLP + Sigmoid: (batch, items, items, 2*d_model) -> (batch, items, items)
-        logits = self.pair_classifier(pairs).squeeze(-1) # (batch, items, items)
-        return torch.sigmoid(logits)
+        # (batch, items, items, 2*d_model) -> (batch, items, items)
+        return self.pair_classifier(pairs).squeeze(-1)   # logiti (bez originalnog sigmoida)
 
 
 if __name__ == "__main__":
@@ -126,8 +125,7 @@ if __name__ == "__main__":
 
     print(f"Input shape:  {x.shape}")
     print(f"Output shape: {out.shape}")
-    assert out.shape == (BATCH, ITEMS, ITEMS), "Pogrešan oblik outputa!"
-    assert out.min() >= 0 and out.max() <= 1, "Vrednosti van (0,1)!"
+    assert out.shape == (BATCH, ITEMS, ITEMS), "Pogresan oblik outputa."
 
     total_params = sum(p.numel() for p in model.parameters())
     print(f"Ukupno parametara: {total_params:,}")
