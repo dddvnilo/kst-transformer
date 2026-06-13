@@ -40,3 +40,5 @@ source venv/bin/activate
 ```bash
 pip install -r requirements.txt
 ```
+
+[Setup KST open source library](https://github.com/milansegedinac/kst/blob/master/README.md) 
