@@ -30,7 +30,7 @@ _ROOT_DIR    = os.path.join(_SCRIPTS_DIR, "..")
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Trening skripta")
-    parser.add_argument("--data",            type=str,   default=os.path.join(_ROOT_DIR, "data", "kst_dataset.npz"))
+    parser.add_argument("--data",            type=str,   default=os.path.join(_ROOT_DIR, "data", "kst_dataset_20k.npz"))
     parser.add_argument("--epochs",          type=int,   default=100)
     parser.add_argument("--batch-size",      type=int,   default=64)
     parser.add_argument("--lr",              type=float, default=3e-4)
@@ -67,6 +67,15 @@ def compute_f1(pred: torch.Tensor, target: torch.Tensor, mask: torch.Tensor) -> 
     return (2 * tp) / (2 * tp + fp + fn) if (tp + fp + fn) > 0 else 0.0
 
 
+def compute_hamming(pred: torch.Tensor, target: torch.Tensor, mask: torch.Tensor) -> float:
+    """Hamming loss = udeo pogresno klasifikovanih celija (FP + FN) / ukupno."""
+    pred_bin   = (torch.sigmoid(pred[mask]) > 0.5)
+    target_bin = target[mask].bool()
+    wrong = (pred_bin != target_bin).sum().item()
+    total = mask.sum().item()
+    return wrong / total if total > 0 else 0.0
+
+
 def run_epoch(model, loader, optimizer, device, max_items, pos_weight: torch.Tensor, train: bool):
     model.train(train)
     total_loss = 0.0
@@ -92,16 +101,16 @@ def run_epoch(model, loader, optimizer, device, max_items, pos_weight: torch.Ten
             all_mask.append(mask)
 
     avg_loss = total_loss / len(loader)
-    f1 = compute_f1(
-        torch.cat(all_pred),
-        torch.cat(all_target),
-        torch.cat(all_mask),
-    )
-    return avg_loss, f1
+    all_pred_cat   = torch.cat(all_pred)
+    all_target_cat = torch.cat(all_target)
+    all_mask_cat   = torch.cat(all_mask)
+    f1      = compute_f1(all_pred_cat, all_target_cat, all_mask_cat)
+    hamming = compute_hamming(all_pred_cat, all_target_cat, all_mask_cat)
+    return avg_loss, f1, hamming
 
 
-def plot_training_curves(train_losses, val_losses, train_f1s, val_f1s, save_path):
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+def plot_training_curves(train_losses, val_losses, train_f1s, val_f1s, train_hammings, val_hammings, save_path):
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18, 4))
 
     epochs = range(1, len(train_losses) + 1)
 
@@ -119,6 +128,14 @@ def plot_training_curves(train_losses, val_losses, train_f1s, val_f1s, save_path
     ax2.set_ylim(0, 1)
     ax2.legend()
     ax2.grid(True)
+
+    ax3.plot(epochs, train_hammings, label="Train")
+    ax3.plot(epochs, val_hammings,   label="Val")
+    ax3.set_title("Hamming Loss")
+    ax3.set_xlabel("Epoha")
+    ax3.set_ylim(0, 1)
+    ax3.legend()
+    ax3.grid(True)
 
     plt.tight_layout()
     plt.savefig(save_path, dpi=150)
@@ -164,22 +181,25 @@ def main():
     best_val_loss = float("inf")
     epochs_without_improvement = 0
 
-    train_losses, val_losses = [], []
-    train_f1s,    val_f1s    = [], []
+    train_losses, val_losses     = [], []
+    train_f1s,    val_f1s        = [], []
+    train_hammings, val_hammings = [], []
 
     for epoch in range(1, args.epochs + 1):
-        train_loss, train_f1 = run_epoch(model, train_loader, optimizer, device, max_items, pos_weight, train=True)
-        val_loss,   val_f1   = run_epoch(model, val_loader,   optimizer, device, max_items, pos_weight, train=False)
+        train_loss, train_f1, train_hamming = run_epoch(model, train_loader, optimizer, device, max_items, pos_weight, train=True)
+        val_loss,   val_f1,   val_hamming   = run_epoch(model, val_loader,   optimizer, device, max_items, pos_weight, train=False)
 
         train_losses.append(train_loss)
         val_losses.append(val_loss)
         train_f1s.append(train_f1)
         val_f1s.append(val_f1)
+        train_hammings.append(train_hamming)
+        val_hammings.append(val_hamming)
 
         print(
             f"Epoch {epoch:>3}/{args.epochs} | "
-            f"Train loss: {train_loss:.4f} | Train F1: {train_f1:.3f} | "
-            f"Val loss: {val_loss:.4f} | Val F1: {val_f1:.3f}"
+            f"Train loss: {train_loss:.4f} | Train F1: {train_f1:.3f} | Train Hamming: {train_hamming:.3f} | "
+            f"Val loss: {val_loss:.4f} | Val F1: {val_f1:.3f} | Val Hamming: {val_hamming:.3f}"
         )
 
         if val_loss < best_val_loss:
@@ -202,14 +222,14 @@ def main():
 
     # Plotovi
     curves_path = os.path.join(args.checkpoint_dir, "training_curves.png")
-    plot_training_curves(train_losses, val_losses, train_f1s, val_f1s, curves_path)
+    plot_training_curves(train_losses, val_losses, train_f1s, val_f1s, train_hammings, val_hammings, curves_path)
     print(f"\nKrive sacuvane: {curves_path}")
 
     # Test evaluacija sa najboljim modelom
     checkpoint = torch.load(checkpoint_path, map_location=device)
     model.load_state_dict(checkpoint["model_state"])
-    test_loss, test_f1 = run_epoch(model, test_loader, optimizer, device, max_items, pos_weight, train=False)
-    print(f"Test | Loss: {test_loss:.4f} | F1: {test_f1:.3f}")
+    test_loss, test_f1, test_hamming = run_epoch(model, test_loader, optimizer, device, max_items, pos_weight, train=False)
+    print(f"Test | Loss: {test_loss:.4f} | F1: {test_f1:.3f} | Hamming: {test_hamming:.3f}")
 
 
 
