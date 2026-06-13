@@ -24,8 +24,8 @@ _ROOT_DIR    = os.path.join(_SCRIPTS_DIR, "..")
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Evaluacija IITA vs KST Transformer")
-    parser.add_argument("--data",        type=str,   default=os.path.join(_ROOT_DIR, "data", "kst_dataset_20k.npz"))
-    parser.add_argument("--checkpoint",  type=str,   default=os.path.join(_ROOT_DIR, "checkpoints", "best_20k.pt"))
+    parser.add_argument("--data",        type=str,   default=os.path.join(_ROOT_DIR, "data", "kst_dataset_weighted.npz"))
+    parser.add_argument("--checkpoint",  type=str,   default=os.path.join(_ROOT_DIR, "checkpoints", "best.pt"))
     parser.add_argument("--num-samples", type=int,   default=200,  help="Broj uzoraka za IITA")
     parser.add_argument("--val-ratio",   type=float, default=0.2)
     parser.add_argument("--test-ratio",  type=float, default=0.1)

@@ -121,6 +121,7 @@ def generate_dataset(
     ce_std: float = 0.03,
     lg_std: float = 0.02,
     pad_to: int = None,
+    weighted: bool = False,
 ):
     """
     Generise `num_samples` primera.
@@ -140,13 +141,20 @@ def generate_dataset(
     if pad_to is None:
         pad_to = max_items
 
+    item_range = list(range(min_items, max_items + 1))
+    if weighted:
+        w = np.arange(1, len(item_range) + 1, dtype=float)  # [1, 2, 3, ...]
+        probs = w / w.sum()
+    else:
+        probs = None  # uniformno
+
     responses = []
     adj_matrices = []
     item_counts = []
 
     for idx in range(num_samples):
         # Nasumican broj pitanja
-        n_items = np.random.randint(min_items, max_items + 1)
+        n_items = int(np.random.choice(item_range, p=probs))
 
         ce_rand = np.clip(np.random.normal(ce, ce_std), 0.0, 0.3)
         lg_rand = np.clip(np.random.normal(lg, lg_std), 0.0, 0.2)
@@ -223,6 +231,8 @@ def main():
                         help="Output fajl (.npz format)")
     parser.add_argument("--seed",        type=int,   default=42,
                         help="Random seed (default: 42)")
+    parser.add_argument("--weighted",    action="store_true", default=False,
+                        help="Linearne tezine — vise pitanja = veci udeo uzoraka")
     args = parser.parse_args()
 
     np.random.seed(args.seed)
@@ -232,6 +242,11 @@ def main():
     print(f"{'='*55}")
     print(f"  Broj primera:            {args.num_samples}")
     print(f"  Items:                   {args.min_items} - {args.max_items}")
+    if args.weighted:
+        n = args.max_items - args.min_items + 1
+        w = list(range(1, n + 1))
+        probs = [round(x / sum(w) * 100, 1) for x in w]
+        print(f"  Tezine (linearne):       {dict(zip(range(args.min_items, args.max_items+1), probs))}%")
     print(f"  Broj studenata po primeru: {args.size}")
     print(f"  Careless error:          {args.ce} (std={args.ce_std})")
     print(f"  Lucky guess:             {args.lg} (std={args.lg_std})")
@@ -248,6 +263,7 @@ def main():
         lg=args.lg,
         ce_std=args.ce_std,
         lg_std=args.lg_std,
+        weighted=args.weighted,
     )
     print("- Kraj generisanja -")
 
