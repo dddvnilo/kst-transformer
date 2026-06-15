@@ -48,8 +48,8 @@ def metrics_np(pred_adj: np.ndarray, true_adj: np.ndarray, n_items: int):
     return float(f1), float(hamming)
 
 
-def run_iita(X_np: np.ndarray, Y_np: np.ndarray, item_counts_np: np.ndarray, num_samples: int):
-    """Pokrece IITA (v=1, exclude_transitive) na num_samples uzoraka."""
+def run_iita(X_np: np.ndarray, Y_np: np.ndarray, item_counts_np: np.ndarray, num_samples: int, v: int = 1):
+    """Pokrece IITA (exclude_transitive) na num_samples uzoraka."""
     f1s, hammings = [], []
     skipped = 0
 
@@ -59,7 +59,7 @@ def run_iita(X_np: np.ndarray, Y_np: np.ndarray, item_counts_np: np.ndarray, num
         y_true = Y_np[i, :n, :n]  # (n_items, n_items)
 
         try:
-            result   = iita_exclude_transitive(x, v=1)
+            result   = iita_exclude_transitive(x, v=v)
             pred_adj = np.zeros((n, n), dtype=np.float32)
             for (a, b) in result['implications']:
                 if a < n and b < n:
@@ -73,7 +73,7 @@ def run_iita(X_np: np.ndarray, Y_np: np.ndarray, item_counts_np: np.ndarray, num
         hammings.append(hamming)
 
         if (i + 1) % 50 == 0:
-            print(f"  IITA: {i + 1}/{num_samples} gotovo...")
+            print(f"  IITA v={v}: {i + 1}/{num_samples} gotovo...")
 
     if skipped:
         print(f"  Preskoceno uzoraka (IITA greska): {skipped}")
@@ -153,10 +153,13 @@ def main():
     print(f"  Device:     {device}")
     print(f"{'='*55}\n")
 
-    # IITA
-    print("Pokrecem IITA (v=1, exclude_transitive)...")
-    iita_f1, iita_hamming = run_iita(X_sub.numpy(), Y_sub.numpy(), ic_sub.numpy(), n)
-    print(f"  -> F1={iita_f1:.3f}  Hamming={iita_hamming:.3f}\n")
+    # IITA v=1, v=2, v=3
+    iita_results = {}
+    for v in [1, 2, 3]:
+        print(f"Pokrecem IITA (v={v}, exclude_transitive)...")
+        f1, hamming = run_iita(X_sub.numpy(), Y_sub.numpy(), ic_sub.numpy(), n, v=v)
+        iita_results[v] = (f1, hamming)
+        print(f"  -> F1={f1:.3f}  Hamming={hamming:.3f}\n")
 
     # Transformer
     print("Pokrecem KST Transformer...")
@@ -183,7 +186,8 @@ def main():
     print(f"{'='*55}")
     print(f"{'Metod':<22} {'F1':>10} {'Hamming':>10}")
     print(f"{'-'*55}")
-    print(f"{'IITA (v=1)':<22} {iita_f1:>10.3f} {iita_hamming:>10.3f}")
+    for v, (f1, hamming) in iita_results.items():
+        print(f"{f'IITA (v={v})':<22} {f1:>10.3f} {hamming:>10.3f}")
     print(f"{'KST Transformer':<22} {transformer_f1:>10.3f} {transformer_hamming:>10.3f}")
     print(f"{'='*55}")
     print(f"\nCheckpoint: epoha {checkpoint.get('epoch', '?')} | "
