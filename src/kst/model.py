@@ -34,7 +34,7 @@ class KSTTransformer(nn.Module):
 
         # ------------------------------------------------------------------
         # 1. Projection: (students,) -> (d_model,)
-        #    Mapira sirovi response vektor iz prostora broja studenata
+        #    Mapira response vektor odgovora na pitanje sa testa iz prostora broja studenata
         #    svakog pitanja u d_model prostor.
         # ------------------------------------------------------------------
         self.input_projection = nn.Linear(students, d_model)
@@ -82,7 +82,7 @@ class KSTTransformer(nn.Module):
         batch_size, students, items = x.shape
 
         # (batch, students, items) -> (batch, items, students)
-        # Svako pitanje je sada vektor duzine `students`
+        # Svako pitanje je sada vektor duzine `students` -> pitanja su ulazni tokeni
         x = x.permute(0, 2, 1)
 
         # Projection: (batch, items, students) -> (batch, items, d_model)
@@ -109,7 +109,7 @@ class KSTTransformer(nn.Module):
         pairs = torch.cat([h_i, h_j], dim=-1)           # (batch, items, items, 2*d_model)
 
         # (batch, items, items, 2*d_model) -> (batch, items, items)
-        return self.pair_classifier(pairs).squeeze(-1)   # logiti (bez originalnog sigmoida)
+        return self.pair_classifier(pairs).squeeze(-1)   # logiti (bez originalnog sigmoida, numericka stabilnost pri racunanju loss-a)
 
 
 if __name__ == "__main__":

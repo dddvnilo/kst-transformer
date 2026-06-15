@@ -26,9 +26,7 @@ _SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 _ROOT_DIR    = os.path.join(_SCRIPTS_DIR, "..")
 
 
-# ---------------------------------------------------------------------------
 # Tranzitivno zatvorenje
-# ---------------------------------------------------------------------------
 
 def transitive_closure(impl_list, items):
     """
@@ -49,9 +47,7 @@ def transitive_closure(impl_list, items):
     return [(i, j) for i in range(items) for j in range(items) if reach[i][j] and i != j]
 
 
-# ---------------------------------------------------------------------------
 # Tranzitivna redukcija
-# ---------------------------------------------------------------------------
 
 def transitive_reduction(imp):
     """
@@ -74,9 +70,7 @@ def transitive_reduction(imp):
     return implications
 
 
-# ---------------------------------------------------------------------------
 # Generisanje random implikacija
-# ---------------------------------------------------------------------------
 
 def random_implications(items, min_impl=0, max_impl=None):
     """
@@ -90,7 +84,6 @@ def random_implications(items, min_impl=0, max_impl=None):
         impl_closed:  puno tranzitivno zatvorenje - za simu
         impl_reduced: minimalne implikacije - za adj matricu
     """
-
     topo = np.random.permutation(items)
     possible = [(int(topo[i]), int(topo[j])) for i in range(items) for j in range(i + 1, items)]
 
@@ -107,9 +100,7 @@ def random_implications(items, min_impl=0, max_impl=None):
     return impl_closed, impl_reduced
 
 
-# ---------------------------------------------------------------------------
 # Generator dataseta
-# ---------------------------------------------------------------------------
 
 def generate_dataset(
     num_samples: int,
@@ -120,26 +111,25 @@ def generate_dataset(
     lg: float,
     ce_std: float = 0.03,
     lg_std: float = 0.02,
-    pad_to: int = None,
     weighted: bool = False,
 ):
     """
     Generise `num_samples` primera.
 
     Svaki primer:
-      - nasumično bira broj pitanja iz [min_items, max_items]
+      - nasumično bira broj pitanja iz [min_items, max_items] (uniformno ili tezinski)
       - generise nasumicne implikacije (bez ciklusa, sa tranzitivnim zatvorenjem)
       - simulira response matricu studenata
-      - padduje response matricu na `pad_to` kolona (ako je zadato)
+      - padduje response matricu na `max_items` (pad_to) kolona
       - adj matrica sadrzi samo minimalne implikacije (tranzitivna redukcija)
 
     Return:
-        responses:    list of np.array oblika (student_size, pad_to)
-        adj_matrices: list of np.array oblika (pad_to, pad_to)
+        responses:    list of np.array oblika (student_size, max_items)
+        adj_matrices: list of np.array oblika (max_items, max_items)
         item_counts:  list of int - stvarni broj pitanja u svakom primeru
     """
-    if pad_to is None:
-        pad_to = max_items
+        
+    pad_to = max_items
 
     item_range = list(range(min_items, max_items + 1))
     if weighted:
@@ -182,12 +172,12 @@ def generate_dataset(
         for (pre, item) in impl_reduced:
             adj[pre][item] = 1
 
-        # Padovanje response matrice na pad_to kolona
+        # Padovanje response matrice na pad_to (max_items) kolona
         if n_items < pad_to:
             pad_cols = np.zeros((student_size, pad_to - n_items), dtype=np.int8)
             response = np.hstack([response, pad_cols])
 
-        # Padovanje adj matrice na (pad_to x pad_to)
+        # Padovanje adj matrice na (pad_to x pad_to, odnosno max_items x max_items)
         full_adj = np.zeros((pad_to, pad_to), dtype=np.int8)
         full_adj[:n_items, :n_items] = adj
 
@@ -198,14 +188,10 @@ def generate_dataset(
         # Ispis na svakih 10%
         log_step = max(1, num_samples // 10)
         if (idx + 1) % log_step == 0:
-            print(f"  Generisano {idx + 1}/{num_samples} primera...")
+            print(f"  Generisano {idx + 1}/{num_samples} primera")
 
     return responses, adj_matrices, item_counts
 
-
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(
@@ -270,8 +256,8 @@ def main():
     n = len(responses)
     pad = args.max_items
 
-    X = np.stack(responses,    axis=0)        # (N, size, pad_to)
-    Y = np.stack(adj_matrices, axis=0)        # (N, pad_to, pad_to)
+    X = np.stack(responses,    axis=0)        # (N, size_students, max_items)
+    Y = np.stack(adj_matrices, axis=0)        # (N, max_items, max_items)
     C = np.array(item_counts,  dtype=np.int64) # (N,)
 
     output_path = Path(args.output)

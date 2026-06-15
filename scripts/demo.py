@@ -140,7 +140,7 @@ def main():
     print(f"  Pogresno predvidjene (FP): {sorted(fp)}")
     print(f"  Promasene (FN):            {sorted(fn)}")
     print(f"{'='*55}")
-    print(f"  Hamming loss: {hamming:.3f}  ({wrong}/{total_cells} pogresnih celija)")
+    print(f"  Hamming loss: {hamming:.3f}  ({wrong}/{total_cells} pogresnih predikcija)")
     print(f"{'='*55}\n")
 
     # Hasse dijagram

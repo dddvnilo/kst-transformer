@@ -36,6 +36,8 @@ def parse_args():
 
 def metrics_np(pred_adj: np.ndarray, true_adj: np.ndarray, n_items: int):
     """F1 i Hamming na n_items x n_items matrici, bez dijagonale."""
+
+    # Maska - Invertovana identity matrica (ne gledamo refleksivne relacije)
     mask = ~np.eye(n_items, dtype=bool)
     pred_flat = pred_adj[mask].astype(bool)
     true_flat = true_adj[mask].astype(bool)
@@ -49,7 +51,7 @@ def metrics_np(pred_adj: np.ndarray, true_adj: np.ndarray, n_items: int):
 
 
 def run_iita(X_np: np.ndarray, Y_np: np.ndarray, item_counts_np: np.ndarray, num_samples: int, v: int = 1):
-    """Pokrece IITA (exclude_transitive) na num_samples uzoraka."""
+    """Pokrece IITA (exclude_transitive) nad test uzorcima i vraca prosecne metrike."""
     f1s, hammings = [], []
     skipped = 0
 
@@ -73,7 +75,7 @@ def run_iita(X_np: np.ndarray, Y_np: np.ndarray, item_counts_np: np.ndarray, num
         hammings.append(hamming)
 
         if (i + 1) % 50 == 0:
-            print(f"  IITA v={v}: {i + 1}/{num_samples} gotovo...")
+            print(f"  IITA v={v}: {i + 1}/{num_samples}")
 
     if skipped:
         print(f"  Preskoceno uzoraka (IITA greska): {skipped}")
@@ -129,16 +131,19 @@ def main():
         seed=args.seed,
     )
 
+    # Liste batch-eva iz tenzora test_loader-a
     X_list, Y_list, ic_list = [], [], []
     for X, Y, ic in test_loader:
         X_list.append(X)
         Y_list.append(Y)
         ic_list.append(ic)
 
+    # Svi batchevi zajedno
     X_all  = torch.cat(X_list)
     Y_all  = torch.cat(Y_list)
     ic_all = torch.cat(ic_list)
 
+    # Uzimamo deo dataset-a
     n = min(args.num_samples, len(X_all))
     X_sub  = X_all[:n]
     Y_sub  = Y_all[:n]
@@ -169,11 +174,11 @@ def main():
     model = KSTTransformer(
         max_items=max_items,
         students=students,
-        d_model=saved_args.get("d_model", 128),
-        nhead=saved_args.get("nhead", 4),
-        num_encoder_layers=saved_args.get("num_layers", 3),
-        dim_feedforward=saved_args.get("dim_feedforward", 256),
-        dropout=saved_args.get("dropout", 0.2),
+        d_model=saved_args.get("d_model"),
+        nhead=saved_args.get("nhead"),
+        num_encoder_layers=saved_args.get("num_layers"),
+        dim_feedforward=saved_args.get("dim_feedforward"),
+        dropout=saved_args.get("dropout", 0.0),
     ).to(device)
     model.load_state_dict(checkpoint["model_state"])
 

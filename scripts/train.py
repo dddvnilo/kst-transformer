@@ -88,6 +88,8 @@ def run_epoch(model, loader, optimizer, device, max_items, pos_weight: torch.Ten
             pred = model(X, item_counts)
             mask = make_loss_mask(item_counts, max_items)
 
+            # BCE loss nad pojedinacnim relacijama
+            # zbog neizbalansiranosti 0 i 1 u matricama na output-u koristi se pos_weight -> kada model predivdi 0 a trebalo je 1 kaznjava se pos_weight puta
             loss = F.binary_cross_entropy_with_logits(pred[mask], Y[mask], pos_weight=pos_weight)
 
             if train:
