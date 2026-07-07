@@ -9,6 +9,7 @@ Primer pokretanja:
 import argparse
 import os
 import sys
+import time
 import numpy as np
 import torch
 
@@ -36,8 +37,6 @@ def parse_args():
 
 def metrics_np(pred_adj: np.ndarray, true_adj: np.ndarray, n_items: int):
     """F1 i Hamming na n_items x n_items matrici, bez dijagonale."""
-
-    # Maska - Invertovana identity matrica (ne gledamo refleksivne relacije)
     mask = ~np.eye(n_items, dtype=bool)
     pred_flat = pred_adj[mask].astype(bool)
     true_flat = true_adj[mask].astype(bool)
@@ -50,15 +49,47 @@ def metrics_np(pred_adj: np.ndarray, true_adj: np.ndarray, n_items: int):
     return float(f1), float(hamming)
 
 
+def transitive_closure_matrix(adj: np.ndarray) -> np.ndarray:
+    """Floyd-Warshall tranzitivno zatvorenje nad bool adj matricom."""
+    tc = adj.astype(bool).copy()
+    n  = tc.shape[0]
+    for k in range(n):
+        tc = tc | (tc[:, k:k+1] & tc[k:k+1, :])
+    return tc
+
+
+def metrics_lenient(pred_adj: np.ndarray, true_adj: np.ndarray, n_items: int):
+    """
+    Lenient F1 i Hamming — tranzitivne veze se ne kažnjavaju:
+      TP: predvidjeno i validno (u tranzitivnom zatvorenju Y)
+      FP: predvidjeno ali ne moze se izvesti iz Y
+      FN: nije predvidjeno a jeste direktna veza u Y (Hasse)
+    """
+    true_closed = transitive_closure_matrix(true_adj[:n_items, :n_items])
+
+    mask             = ~np.eye(n_items, dtype=bool)
+    pred_flat        = pred_adj[mask].astype(bool)
+    true_flat        = true_adj[mask].astype(bool)
+    true_closed_flat = true_closed[mask]
+
+    tp = ( pred_flat &  true_closed_flat).sum()
+    fp = ( pred_flat & ~true_closed_flat).sum()
+    fn = (~pred_flat &  true_flat).sum()
+
+    f1      = (2 * tp) / (2 * tp + fp + fn) if (tp + fp + fn) > 0 else 1.0
+    hamming = (fp + fn) / len(pred_flat) if len(pred_flat) > 0 else 0.0
+    return float(f1), float(hamming)
+
+
 def run_iita(X_np: np.ndarray, Y_np: np.ndarray, item_counts_np: np.ndarray, num_samples: int, v: int = 1):
-    """Pokrece IITA (exclude_transitive) nad test uzorcima i vraca prosecne metrike."""
-    f1s, hammings = [], []
+    """Pokrece IITA (exclude_transitive) nad test uzorcima i vraca (strict, lenient) metrike."""
+    f1s, hammings, f1s_l, hammings_l = [], [], [], []
     skipped = 0
 
     for i in range(num_samples):
         n = int(item_counts_np[i])
-        x      = X_np[i, :, :n]   # (students, n_items) — bez paddinga
-        y_true = Y_np[i, :n, :n]  # (n_items, n_items)
+        x      = X_np[i, :, :n]
+        y_true = Y_np[i, :n, :n]
 
         try:
             result   = iita_exclude_transitive(x, v=v)
@@ -66,13 +97,14 @@ def run_iita(X_np: np.ndarray, Y_np: np.ndarray, item_counts_np: np.ndarray, num
             for (a, b) in result['implications']:
                 if a < n and b < n:
                     pred_adj[a][b] = 1.0
-        except Exception as e:
+        except Exception:
             skipped += 1
             continue
 
-        f1, hamming = metrics_np(pred_adj, y_true, n)
-        f1s.append(f1)
-        hammings.append(hamming)
+        f1, hamming     = metrics_np(pred_adj, y_true, n)
+        f1_l, hamming_l = metrics_lenient(pred_adj, y_true, n)
+        f1s.append(f1);         hammings.append(hamming)
+        f1s_l.append(f1_l);    hammings_l.append(hamming_l)
 
         if (i + 1) % 50 == 0:
             print(f"  IITA v={v}: {i + 1}/{num_samples}")
@@ -80,7 +112,7 @@ def run_iita(X_np: np.ndarray, Y_np: np.ndarray, item_counts_np: np.ndarray, num
     if skipped:
         print(f"  Preskoceno uzoraka (IITA greska): {skipped}")
 
-    return np.mean(f1s), np.mean(hammings)
+    return (np.mean(f1s), np.mean(hammings)), (np.mean(f1s_l), np.mean(hammings_l))
 
 
 def run_transformer(model, X: torch.Tensor, Y: torch.Tensor, item_counts: torch.Tensor,
@@ -106,16 +138,18 @@ def run_transformer(model, X: torch.Tensor, Y: torch.Tensor, item_counts: torch.
     all_target = torch.cat(all_target).numpy()
     all_ic     = torch.cat(all_ic).numpy()
 
-    f1s, hammings = [], []
+    f1s, hammings, f1s_l, hammings_l = [], [], [], []
     for i in range(len(all_pred)):
         n        = int(all_ic[i])
         pred_adj = (1 / (1 + np.exp(-all_pred[i, :n, :n])) > 0.5).astype(np.float32)
         true_adj = all_target[i, :n, :n]
-        f1, hamming = metrics_np(pred_adj, true_adj, n)
-        f1s.append(f1)
-        hammings.append(hamming)
+        f1, hamming     = metrics_np(pred_adj, true_adj, n)
+        f1_l, hamming_l = metrics_lenient(pred_adj, true_adj, n)
+        f1s.append(f1);         hammings.append(hamming)
+        f1s_l.append(f1_l);    hammings_l.append(hamming_l)
 
-    return float(np.mean(f1s)), float(np.mean(hammings))
+    return (float(np.mean(f1s)), float(np.mean(hammings))), \
+           (float(np.mean(f1s_l)), float(np.mean(hammings_l)))
 
 
 def main():
@@ -159,12 +193,17 @@ def main():
     print(f"{'='*55}\n")
 
     # IITA v=1, v=2, v=3
-    iita_results = {}
+    iita_strict  = {}
+    iita_lenient = {}
+    iita_times   = {}
     for v in [1, 2, 3]:
         print(f"Pokrecem IITA (v={v}, exclude_transitive)...")
-        f1, hamming = run_iita(X_sub.numpy(), Y_sub.numpy(), ic_sub.numpy(), n, v=v)
-        iita_results[v] = (f1, hamming)
-        print(f"  -> F1={f1:.3f}  Hamming={hamming:.3f}\n")
+        t0 = time.perf_counter()
+        strict, lenient = run_iita(X_sub.numpy(), Y_sub.numpy(), ic_sub.numpy(), n, v=v)
+        iita_times[v]   = time.perf_counter() - t0
+        iita_strict[v]  = strict
+        iita_lenient[v] = lenient
+        print(f"  -> F1={strict[0]:.3f}  Hamming={strict[1]:.3f}  Vreme={iita_times[v]:.1f}s\n")
 
     # Transformer
     print("Pokrecem KST Transformer...")
@@ -182,19 +221,34 @@ def main():
     ).to(device)
     model.load_state_dict(checkpoint["model_state"])
 
-    transformer_f1, transformer_hamming = run_transformer(
-        model, X_sub, Y_sub, ic_sub, device, args.batch_size
-    )
-    print(f"  -> F1={transformer_f1:.3f}  Hamming={transformer_hamming:.3f}\n")
+    t0 = time.perf_counter()
+    tr_strict, tr_lenient = run_transformer(model, X_sub, Y_sub, ic_sub, device, args.batch_size)
+    tr_time = time.perf_counter() - t0
+    print(f"  -> F1={tr_strict[0]:.3f}  Hamming={tr_strict[1]:.3f}  Vreme={tr_time:.1f}s\n")
 
-    # Rezultati
-    print(f"{'='*55}")
-    print(f"{'Metod':<22} {'F1':>10} {'Hamming':>10}")
-    print(f"{'-'*55}")
-    for v, (f1, hamming) in iita_results.items():
-        print(f"{f'IITA (v={v})':<22} {f1:>10.3f} {hamming:>10.3f}")
-    print(f"{'KST Transformer':<22} {transformer_f1:>10.3f} {transformer_hamming:>10.3f}")
-    print(f"{'='*55}")
+    W = 67
+    # Scoreboard 1: Strict (Y = Hasse dijagram)
+    print(f"{'='*W}")
+    print(f"  Strict (ground truth = Hasse dijagram)")
+    print(f"{'='*W}")
+    print(f"{'Metod':<22} {'F1':>10} {'Hamming':>10} {'Vreme (s)':>12}")
+    print(f"{'-'*W}")
+    for v, (f1, hamming) in iita_strict.items():
+        print(f"{f'IITA (v={v})':<22} {f1:>10.3f} {hamming:>10.3f} {iita_times[v]:>12.1f}")
+    print(f"{'KST Transformer':<22} {tr_strict[0]:>10.3f} {tr_strict[1]:>10.3f} {tr_time:>12.1f}")
+    print(f"{'='*W}")
+
+    # Scoreboard 2: Lenient (tranzitivne veze se ne kažnjavaju)
+    print(f"\n{'='*W}")
+    print(f"  Lenient (tranzitivne veze se ne kaznjavaaju)")
+    print(f"{'='*W}")
+    print(f"{'Metod':<22} {'F1':>10} {'Hamming':>10} {'Vreme (s)':>12}")
+    print(f"{'-'*W}")
+    for v, (f1, hamming) in iita_lenient.items():
+        print(f"{f'IITA (v={v})':<22} {f1:>10.3f} {hamming:>10.3f} {iita_times[v]:>12.1f}")
+    print(f"{'KST Transformer':<22} {tr_lenient[0]:>10.3f} {tr_lenient[1]:>10.3f} {tr_time:>12.1f}")
+    print(f"{'='*W}")
+
     print(f"\nCheckpoint: epoha {checkpoint.get('epoch', '?')} | "
           f"val_loss={checkpoint.get('val_loss', 0):.4f} | "
           f"val_F1={checkpoint.get('val_f1', 0):.3f}")
