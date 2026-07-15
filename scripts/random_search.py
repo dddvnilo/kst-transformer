@@ -9,16 +9,14 @@ Primer pokretanja:
 import argparse
 import csv
 import os
-import sys
 import random
 
 import torch
 import torch.nn.functional as F
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-
 from kst.model import KSTTransformer
 from kst.dataset import make_dataloaders, make_loss_mask
+from util.metrics import compute_pos_weight
 
 _SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 _ROOT_DIR    = os.path.join(_SCRIPTS_DIR, "..")
@@ -72,16 +70,6 @@ def sample_hparams(rng: random.Random) -> dict:
 # Pomocne funkcije
 # ---------------------------------------------------------------------------
 
-def compute_pos_weight(loader, max_items: int, device) -> torch.Tensor:
-    total_pos = total_neg = 0
-    for _, Y, item_counts in loader:
-        mask = make_loss_mask(item_counts, max_items)
-        total_pos += Y[mask].sum().item()
-        total_neg += (~Y[mask].bool()).sum().item()
-    pw = total_neg / total_pos if total_pos > 0 else 1.0
-    return torch.tensor([pw], device=device)
-
-
 def run_epoch(model, loader, optimizer, device, max_items, pos_weight, train: bool):
     model.train(train)
     total_loss = 0.0
@@ -115,7 +103,8 @@ def train_trial(hparams, train_loader, val_loader, students, max_items, device, 
     ).to(device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=hparams["lr"])
-    pos_weight = compute_pos_weight(train_loader, max_items, device)
+    pw = compute_pos_weight(train_loader, max_items)
+    pos_weight = torch.tensor([pw], device=device)
 
     best_val_loss = float("inf")
     epochs_no_improve = 0

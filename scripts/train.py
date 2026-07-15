@@ -12,16 +12,14 @@ Primer pokretanja:
 
 import argparse
 import os
-import sys
 
 import torch
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-
 from kst.model import KSTTransformer
 from kst.dataset import make_dataloaders, make_loss_mask
+from util.metrics import compute_pos_weight, compute_f1, compute_hamming
 
 
 _SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -45,35 +43,6 @@ def parse_args():
     parser.add_argument("--checkpoint-dir",  type=str,   default=os.path.join(_ROOT_DIR, "checkpoints"))
     parser.add_argument("--patience",        type=int,   default=10)
     return parser.parse_args()
-
-
-def compute_pos_weight(loader, max_items: int) -> float:
-    """Racuna pos_weight = (broj nula) / (broj jedinica) u trening setu."""
-    total_pos = total_neg = 0
-    for _, Y, item_counts in loader:
-        mask = make_loss_mask(item_counts, max_items)
-        total_pos += Y[mask].sum().item()
-        total_neg += (~Y[mask].bool()).sum().item()
-    return total_neg / total_pos if total_pos > 0 else 1.0
-
-
-def compute_f1(pred: torch.Tensor, target: torch.Tensor, mask: torch.Tensor) -> float:
-    """F1 score samo na maskiranim celijama (ignorise padding i dijagonalu)."""
-    pred_bin   = (torch.sigmoid(pred[mask]) > 0.5)
-    target_bin = target[mask].bool()
-    tp = (pred_bin &  target_bin).sum().item()
-    fp = (pred_bin & ~target_bin).sum().item()
-    fn = (~pred_bin & target_bin).sum().item()
-    return (2 * tp) / (2 * tp + fp + fn) if (tp + fp + fn) > 0 else 0.0
-
-
-def compute_hamming(pred: torch.Tensor, target: torch.Tensor, mask: torch.Tensor) -> float:
-    """Hamming loss = udeo pogresno klasifikovanih celija (FP + FN) / ukupno."""
-    pred_bin   = (torch.sigmoid(pred[mask]) > 0.5)
-    target_bin = target[mask].bool()
-    wrong = (pred_bin != target_bin).sum().item()
-    total = mask.sum().item()
-    return wrong / total if total > 0 else 0.0
 
 
 def run_epoch(model, loader, optimizer, device, max_items, pos_weight: torch.Tensor, train: bool):

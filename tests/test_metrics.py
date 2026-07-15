@@ -1,11 +1,17 @@
 """
-Testovi za metrike u scripts/train.py i scripts/eval_iita.py,
+Testovi za metrike u src/util/metrics.py,
 i njihovu medjusobnu konzistentnost.
 """
 
-from train import compute_f1, compute_hamming, compute_pos_weight
-from eval_iita import metrics_np, metrics_lenient, transitive_closure_matrix
-from generate_dataset import transitive_closure
+from util.metrics import (
+    compute_f1,
+    compute_hamming,
+    compute_pos_weight,
+    metrics_np,
+    metrics_lenient,
+    transitive_closure_matrix,
+)
+from util.generate_dataset_util import transitive_closure
 
 
 def test_compute_f1_perfect_prediction():

@@ -5,6 +5,9 @@ venv/
 __pycache__/
 *.pyc
 
+# Editable install build artifact
+*.egg-info/
+
 # Jupyter
 .ipynb_checkpoints/
 

@@ -1,9 +1,9 @@
 """
-Testovi za scripts/generate_dataset.py - tranzitivno zatvorenje/redukcija
+Testovi za src/util/generate_dataset_util.py - tranzitivno zatvorenje/redukcija
 i generisanje sintetickog dataseta.
 """
 
-from generate_dataset import (
+from util.generate_dataset_util import (
     transitive_closure,
     transitive_reduction,
     random_implications,

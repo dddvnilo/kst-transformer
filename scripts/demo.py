@@ -1,10 +1,7 @@
 import argparse
 import os
-import sys
 import numpy as np
 import torch
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from learning_spaces.kst import simu, hasse
 from kst.model import KSTTransformer
