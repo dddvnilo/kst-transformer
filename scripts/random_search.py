@@ -15,7 +15,7 @@ import torch
 import torch.nn.functional as F
 
 from kst.model import KSTTransformer
-from kst.dataset import make_dataloaders, make_loss_mask
+from kst.dataset import make_dataloaders, make_loss_mask, make_lenient_loss_mask
 from util.metrics import compute_pos_weight
 
 _SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -32,6 +32,8 @@ def parse_args():
     parser.add_argument("--test-ratio",  type=float, default=0.1)
     parser.add_argument("--seed",        type=int,   default=42)
     parser.add_argument("--output",      type=str,   default=os.path.join(_ROOT_DIR, "checkpoints", "random_search.csv"))
+    parser.add_argument("--lenient-loss", action="store_true", default=False,
+                        help="Ne kaznjava u loss-u tranzitivno validne, ali nedirektne predikcije")
     return parser.parse_args()
 
 
@@ -70,7 +72,7 @@ def sample_hparams(rng: random.Random) -> dict:
 # Pomocne funkcije
 # ---------------------------------------------------------------------------
 
-def run_epoch(model, loader, optimizer, device, max_items, pos_weight, train: bool):
+def run_epoch(model, loader, optimizer, device, max_items, pos_weight, train: bool, lenient: bool = False):
     model.train(train)
     total_loss = 0.0
 
@@ -79,6 +81,8 @@ def run_epoch(model, loader, optimizer, device, max_items, pos_weight, train: bo
             X, Y, item_counts = X.to(device), Y.to(device), item_counts.to(device)
             pred = model(X, item_counts)
             mask = make_loss_mask(item_counts, max_items)
+            if lenient:
+                mask = make_lenient_loss_mask(Y, mask)
             loss = F.binary_cross_entropy_with_logits(pred[mask], Y[mask], pos_weight=pos_weight)
 
             if train:
@@ -91,7 +95,7 @@ def run_epoch(model, loader, optimizer, device, max_items, pos_weight, train: bo
     return total_loss / len(loader)
 
 
-def train_trial(hparams, train_loader, val_loader, students, max_items, device, epochs, patience):
+def train_trial(hparams, train_loader, val_loader, students, max_items, device, epochs, patience, lenient: bool = False):
     model = KSTTransformer(
         max_items=max_items,
         students=students,
@@ -103,15 +107,15 @@ def train_trial(hparams, train_loader, val_loader, students, max_items, device, 
     ).to(device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=hparams["lr"])
-    pw = compute_pos_weight(train_loader, max_items)
+    pw = compute_pos_weight(train_loader, max_items, lenient=lenient)
     pos_weight = torch.tensor([pw], device=device)
 
     best_val_loss = float("inf")
     epochs_no_improve = 0
 
     for epoch in range(1, epochs + 1):
-        run_epoch(model, train_loader, optimizer, device, max_items, pos_weight, train=True)
-        val_loss = run_epoch(model, val_loader, optimizer, device, max_items, pos_weight, train=False)
+        run_epoch(model, train_loader, optimizer, device, max_items, pos_weight, train=True, lenient=lenient)
+        val_loss = run_epoch(model, val_loader, optimizer, device, max_items, pos_weight, train=False, lenient=lenient)
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
@@ -161,6 +165,7 @@ def main():
             hparams, train_loader, val_loader,
             students, max_items, device,
             epochs=args.epochs, patience=args.patience,
+            lenient=args.lenient_loss,
         )
 
         print(f"-> val_loss={best_val_loss:.4f}  (epoha {stopped_epoch})")

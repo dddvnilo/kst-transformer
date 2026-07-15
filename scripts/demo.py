@@ -12,8 +12,8 @@ _ROOT_DIR    = os.path.join(_SCRIPTS_DIR, "..")
 
 def parse_args():
     parser = argparse.ArgumentParser(description="KST Transformer demo")
-    parser.add_argument("--checkpoint", type=str, default=os.path.join(_ROOT_DIR, "model", "best.pt"))
-    parser.add_argument("--ce",         type=float, default=0.1,  help="Careless error stopa")
+    parser.add_argument("--checkpoint", type=str, default=os.path.join(_ROOT_DIR, "checkpoints", "best.pt"))
+    parser.add_argument("--ce",         type=float, default=0.01,  help="Careless error stopa")
     parser.add_argument("--lg",         type=float, default=0.05, help="Lucky guess stopa")
     parser.add_argument("--threshold",  type=float, default=0.5,  help="Threshold za sigmoid")
     return parser.parse_args()

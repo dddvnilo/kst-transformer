@@ -18,7 +18,7 @@ import torch.nn.functional as F
 import matplotlib.pyplot as plt
 
 from kst.model import KSTTransformer
-from kst.dataset import make_dataloaders, make_loss_mask
+from kst.dataset import make_dataloaders, make_loss_mask, make_lenient_loss_mask
 from util.metrics import compute_pos_weight, compute_f1, compute_hamming
 
 
@@ -42,10 +42,12 @@ def parse_args():
     parser.add_argument("--seed",            type=int,   default=42)
     parser.add_argument("--checkpoint-dir",  type=str,   default=os.path.join(_ROOT_DIR, "checkpoints"))
     parser.add_argument("--patience",        type=int,   default=10)
+    parser.add_argument("--lenient-loss",    action="store_true", default=False,
+                        help="Ne kaznjava u loss-u tranzitivno validne, ali nedirektne predikcije")
     return parser.parse_args()
 
 
-def run_epoch(model, loader, optimizer, device, max_items, pos_weight: torch.Tensor, train: bool):
+def run_epoch(model, loader, optimizer, device, max_items, pos_weight: torch.Tensor, train: bool, lenient: bool = False):
     model.train(train)
     total_loss = 0.0
     all_pred, all_target, all_mask = [], [], []
@@ -56,6 +58,8 @@ def run_epoch(model, loader, optimizer, device, max_items, pos_weight: torch.Ten
 
             pred = model(X, item_counts)
             mask = make_loss_mask(item_counts, max_items)
+            if lenient:
+                mask = make_lenient_loss_mask(Y, mask)
 
             # BCE loss nad pojedinacnim relacijama
             # zbog neizbalansiranosti 0 i 1 u matricama na output-u koristi se pos_weight -> kada model predivdi 0 a trebalo je 1 kaznjava se pos_weight puta
@@ -143,7 +147,7 @@ def main():
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
-    pw = compute_pos_weight(train_loader, max_items)
+    pw = compute_pos_weight(train_loader, max_items, lenient=args.lenient_loss)
     pos_weight = torch.tensor([pw], device=device)
     print(f"pos_weight: {pw:.2f}  (nula/jedinica odnos u trening setu)")
 
@@ -157,8 +161,8 @@ def main():
     train_hammings, val_hammings = [], []
 
     for epoch in range(1, args.epochs + 1):
-        train_loss, train_f1, train_hamming = run_epoch(model, train_loader, optimizer, device, max_items, pos_weight, train=True)
-        val_loss,   val_f1,   val_hamming   = run_epoch(model, val_loader,   optimizer, device, max_items, pos_weight, train=False)
+        train_loss, train_f1, train_hamming = run_epoch(model, train_loader, optimizer, device, max_items, pos_weight, train=True, lenient=args.lenient_loss)
+        val_loss,   val_f1,   val_hamming   = run_epoch(model, val_loader,   optimizer, device, max_items, pos_weight, train=False, lenient=args.lenient_loss)
 
         train_losses.append(train_loss)
         val_losses.append(val_loss)
@@ -199,7 +203,7 @@ def main():
     # Test evaluacija sa najboljim modelom
     checkpoint = torch.load(checkpoint_path, map_location=device)
     model.load_state_dict(checkpoint["model_state"])
-    test_loss, test_f1, test_hamming = run_epoch(model, test_loader, optimizer, device, max_items, pos_weight, train=False)
+    test_loss, test_f1, test_hamming = run_epoch(model, test_loader, optimizer, device, max_items, pos_weight, train=False, lenient=args.lenient_loss)
     print(f"Test | Loss: {test_loss:.4f} | F1: {test_f1:.3f} | Hamming: {test_hamming:.3f}")
 
 

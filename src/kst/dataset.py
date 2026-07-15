@@ -51,6 +51,38 @@ def make_loss_mask(item_counts: torch.Tensor, max_items: int) -> torch.Tensor:
     return valid_pair & diag_mask                                     # (batch, max_items, max_items)
 
 
+def batched_transitive_closure(Y_bool: torch.Tensor) -> torch.Tensor:
+    """
+    Floyd-Warshall tranzitivno zatvorenje, batchovano, u torch-u (isti algoritam
+    kao util.metrics.transitive_closure_matrix, ali vektorizovano po batch
+    dimenziji i bez prebacivanja na CPU/numpy - koristi se u trening petlji).
+
+    :param Y_bool: (batch, max_items, max_items) bool
+    :return:       (batch, max_items, max_items) bool
+    """
+    tc = Y_bool.clone()
+    n = tc.shape[-1]
+    for k in range(n):
+        tc = tc | (tc[:, :, k:k+1] & tc[:, k:k+1, :])
+    return tc
+
+
+def make_lenient_loss_mask(Y: torch.Tensor, base_mask: torch.Tensor) -> torch.Tensor:
+    """
+    Prosiruje base_mask (padding + dijagonala, iz make_loss_mask) tako da
+    iskljuci celije koje su tranzitivno implicirane u Y ali nisu direktna Hasse
+    ivica - model se ne kaznjava ako predvidi takvu (validnu, redundantnu) vezu.
+
+    :param Y:         (batch, max_items, max_items) float - Hasse dijagram
+    :param base_mask: (batch, max_items, max_items) bool - iz make_loss_mask
+    :return:          (batch, max_items, max_items) bool
+    """
+    Y_bool = Y.bool()
+    closed = batched_transitive_closure(Y_bool)
+    transitive_only = closed & ~Y_bool
+    return base_mask & ~transitive_only
+
+
 def make_dataloaders(
     path: str,
     batch_size: int,
