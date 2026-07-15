@@ -41,4 +41,10 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
+## 4. Installing the project package (editable mode)
+
+```bash
+pip install -e .
+```
+
 [Setup KST open source library](https://github.com/milansegedinac/kst/blob/master/README.md) 
