@@ -21,7 +21,7 @@ def compute_f1(pred: torch.Tensor, target: torch.Tensor, mask: torch.Tensor) -> 
     tp = (pred_bin &  target_bin).sum().item()
     fp = (pred_bin & ~target_bin).sum().item()
     fn = (~pred_bin & target_bin).sum().item()
-    return (2 * tp) / (2 * tp + fp + fn) if (tp + fp + fn) > 0 else 0.0
+    return (2 * tp) / (2 * tp + fp + fn) if (tp + fp + fn) > 0 else 1.0
 
 
 def compute_hamming(pred: torch.Tensor, target: torch.Tensor, mask: torch.Tensor) -> float:
