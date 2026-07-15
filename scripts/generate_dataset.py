@@ -18,13 +18,66 @@ Koristi:
 
 import argparse
 import os
-import numpy as np
+import subprocess
+from datetime import datetime
 from pathlib import Path
+
+import numpy as np
+import yaml
 
 from util.generate_dataset_util import generate_dataset
 
 _SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 _ROOT_DIR    = os.path.join(_SCRIPTS_DIR, "..")
+
+
+def write_dataset_card(output_path: Path, args: argparse.Namespace, item_counts: np.ndarray) -> None:
+    """Pise <output_path bez .npz>.md - YAML frontmatter + markdown, HF Dataset Card stil."""
+    try:
+        git_commit = subprocess.run(
+            ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True,
+        ).stdout.strip()
+    except Exception:
+        git_commit = None
+
+    n = len(item_counts)
+    frontmatter = {
+        "dataset_name":   output_path.stem,
+        "generated_by":   "scripts/generate_dataset.py",
+        "generated_at":   datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "generator_args": vars(args),
+        "git_commit":     git_commit,
+    }
+
+    distribution_rows = []
+    for k in range(args.min_items, args.max_items + 1):
+        cnt = int((item_counts == k).sum())
+        pct = 100 * cnt / n if n > 0 else 0.0
+        distribution_rows.append(f"| {k} | {cnt} | {pct:.1f}% |")
+
+    body = (
+        f"\n# {output_path.stem}\n\n"
+        "## Summary\n"
+        "Sinteticki dataset za KST Transformer - simulirani odgovori studenata, "
+        "generisani sa `scripts/generate_dataset.py`.\n\n"
+        "## Structure\n"
+        f"- `X`: (N, {args.size}, {args.max_items}) float32 - binarna response matrica, paddovana nulama\n"
+        f"- `Y`: (N, {args.max_items}, {args.max_items}) float32 - Hasse dijagram (tranzitivna redukcija)\n"
+        "- `item_counts`: (N,) int64 - stvarni broj pitanja po uzorku\n\n"
+        "## Distribucija broja pitanja\n"
+        "| items | count | % |\n"
+        "|---|---|---|\n"
+        + "\n".join(distribution_rows) + "\n"
+    )
+
+    card_path = output_path.with_suffix(".md")
+    with open(card_path, "w", encoding="utf-8") as f:
+        f.write("---\n")
+        yaml.safe_dump(frontmatter, f, sort_keys=False, allow_unicode=True)
+        f.write("---\n")
+        f.write(body)
+
+    print(f"Kartica sacuvana: {card_path}")
 
 
 def main():
@@ -114,6 +167,8 @@ def main():
     for k in range(args.min_items, args.max_items + 1):
         cnt = (C == k).sum()
         print(f"  {k} items: {cnt} primera ({100*cnt/n:.1f}%)")
+
+    write_dataset_card(output_path, args, C)
 
     print(f"\nQuick check (prvi primer):")
     print(f"  item_count = {C[0]}")

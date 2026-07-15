@@ -21,8 +21,12 @@ __pycache__/
 models/
 outputs/
 
-# Data files
-data/
+# Data files (samo veliki binarni dataset-ovi; HF-card .md fajlovi ostaju trackable)
+data/*.npz
+
+# MLflow lokalni experiment store
+mlruns/
+mlflow.db
 
 # OS files
 .DS_Store

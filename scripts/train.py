@@ -13,6 +13,7 @@ Primer pokretanja:
 import argparse
 import os
 
+import mlflow
 import torch
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
@@ -123,88 +124,114 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
 
-    train_loader, val_loader, test_loader = make_dataloaders(
-        args.data,
-        batch_size=args.batch_size,
-        val_ratio=args.val_ratio,
-        test_ratio=args.test_ratio,
-        seed=args.seed,
-    )
+    # NOTE: Novije verzije MLflow-a stavljaju cist file-store (./mlruns metapodaci) u
+    # "maintenance mode" - koristimo SQLite backend za metapodatke (params/metrics),
+    # artifact-i (checkpoint, krive) i dalje idu u lokalni ./mlruns folder.
+    mlflow.set_tracking_uri(f"sqlite:///{os.path.join(_ROOT_DIR, 'mlflow.db')}")
 
-    # Citamo max_items i students iz prvog batcha da ne moramo da ih prosledjujemo rucno
-    X_sample, _, _ = next(iter(train_loader))
-    _, students, max_items = X_sample.shape
+    with mlflow.start_run():
+        mlflow.log_params(vars(args))
 
-    model = KSTTransformer(
-        max_items=max_items,
-        students=students,
-        d_model=args.d_model,
-        nhead=args.nhead,
-        num_encoder_layers=args.num_layers,
-        dim_feedforward=args.dim_feedforward,
-        dropout=args.dropout,
-    ).to(device)
-
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-
-    pw = compute_pos_weight(train_loader, max_items, lenient=args.lenient_loss)
-    pos_weight = torch.tensor([pw], device=device)
-    print(f"pos_weight: {pw:.2f}  (nula/jedinica odnos u trening setu)")
-
-    os.makedirs(args.checkpoint_dir, exist_ok=True)
-    checkpoint_path = os.path.join(args.checkpoint_dir, "best.pt")
-    best_val_loss = float("inf")
-    epochs_without_improvement = 0
-
-    train_losses, val_losses     = [], []
-    train_f1s,    val_f1s        = [], []
-    train_hammings, val_hammings = [], []
-
-    for epoch in range(1, args.epochs + 1):
-        train_loss, train_f1, train_hamming = run_epoch(model, train_loader, optimizer, device, max_items, pos_weight, train=True, lenient=args.lenient_loss)
-        val_loss,   val_f1,   val_hamming   = run_epoch(model, val_loader,   optimizer, device, max_items, pos_weight, train=False, lenient=args.lenient_loss)
-
-        train_losses.append(train_loss)
-        val_losses.append(val_loss)
-        train_f1s.append(train_f1)
-        val_f1s.append(val_f1)
-        train_hammings.append(train_hamming)
-        val_hammings.append(val_hamming)
-
-        print(
-            f"Epoch {epoch:>3}/{args.epochs} | "
-            f"Train loss: {train_loss:.4f} | Train F1: {train_f1:.3f} | Train Hamming: {train_hamming:.3f} | "
-            f"Val loss: {val_loss:.4f} | Val F1: {val_f1:.3f} | Val Hamming: {val_hamming:.3f}"
+        train_loader, val_loader, test_loader = make_dataloaders(
+            args.data,
+            batch_size=args.batch_size,
+            val_ratio=args.val_ratio,
+            test_ratio=args.test_ratio,
+            seed=args.seed,
         )
 
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            epochs_without_improvement = 0
-            torch.save({
-                "epoch":           epoch,
-                "model_state":     model.state_dict(),
-                "optimizer_state": optimizer.state_dict(),
-                "val_loss":        val_loss,
-                "val_f1":          val_f1,
-                "args":            vars(args),
-            }, checkpoint_path)
-            print(f"  -> Checkpoint sacuvan (val_loss={val_loss:.4f})")
-        else:
-            epochs_without_improvement += 1
-            if epochs_without_improvement >= args.patience:
-                print(f"\nEarly stopping - val loss se nije poboljsao {args.patience} epoha zaredom.")
-                break
+        # Citamo max_items i students iz prvog batcha da ne moramo da ih prosledjujemo rucno
+        X_sample, _, _ = next(iter(train_loader))
+        _, students, max_items = X_sample.shape
 
-    # Plotovi
-    curves_path = os.path.join(args.checkpoint_dir, "training_curves.png")
-    plot_training_curves(train_losses, val_losses, train_f1s, val_f1s, train_hammings, val_hammings, curves_path)
-    print(f"\nKrive sacuvane: {curves_path}")
+        model = KSTTransformer(
+            max_items=max_items,
+            students=students,
+            d_model=args.d_model,
+            nhead=args.nhead,
+            num_encoder_layers=args.num_layers,
+            dim_feedforward=args.dim_feedforward,
+            dropout=args.dropout,
+        ).to(device)
 
-    # Test evaluacija sa najboljim modelom
-    checkpoint = torch.load(checkpoint_path, map_location=device)
-    model.load_state_dict(checkpoint["model_state"])
-    test_loss, test_f1, test_hamming = run_epoch(model, test_loader, optimizer, device, max_items, pos_weight, train=False, lenient=args.lenient_loss)
-    print(f"Test | Loss: {test_loss:.4f} | F1: {test_f1:.3f} | Hamming: {test_hamming:.3f}")
+        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+
+        pw = compute_pos_weight(train_loader, max_items, lenient=args.lenient_loss)
+        pos_weight = torch.tensor([pw], device=device)
+        print(f"pos_weight: {pw:.2f}  (nula/jedinica odnos u trening setu)")
+
+        os.makedirs(args.checkpoint_dir, exist_ok=True)
+        checkpoint_path = os.path.join(args.checkpoint_dir, "best.pt")
+        best_val_loss = float("inf")
+        epochs_without_improvement = 0
+
+        train_losses, val_losses     = [], []
+        train_f1s,    val_f1s        = [], []
+        train_hammings, val_hammings = [], []
+
+        for epoch in range(1, args.epochs + 1):
+            train_loss, train_f1, train_hamming = run_epoch(model, train_loader, optimizer, device, max_items, pos_weight, train=True, lenient=args.lenient_loss)
+            val_loss,   val_f1,   val_hamming   = run_epoch(model, val_loader,   optimizer, device, max_items, pos_weight, train=False, lenient=args.lenient_loss)
+
+            train_losses.append(train_loss)
+            val_losses.append(val_loss)
+            train_f1s.append(train_f1)
+            val_f1s.append(val_f1)
+            train_hammings.append(train_hamming)
+            val_hammings.append(val_hamming)
+
+            print(
+                f"Epoch {epoch:>3}/{args.epochs} | "
+                f"Train loss: {train_loss:.4f} | Train F1: {train_f1:.3f} | Train Hamming: {train_hamming:.3f} | "
+                f"Val loss: {val_loss:.4f} | Val F1: {val_f1:.3f} | Val Hamming: {val_hamming:.3f}"
+            )
+
+            mlflow.log_metrics({
+                "train_loss":    train_loss,
+                "val_loss":      val_loss,
+                "train_f1":      train_f1,
+                "val_f1":        val_f1,
+                "train_hamming": train_hamming,
+                "val_hamming":   val_hamming,
+            }, step=epoch)
+
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                epochs_without_improvement = 0
+                torch.save({
+                    "epoch":           epoch,
+                    "model_state":     model.state_dict(),
+                    "optimizer_state": optimizer.state_dict(),
+                    "val_loss":        val_loss,
+                    "val_f1":          val_f1,
+                    "args":            vars(args),
+                }, checkpoint_path)
+                print(f"  -> Checkpoint sacuvan (val_loss={val_loss:.4f})")
+            else:
+                epochs_without_improvement += 1
+                if epochs_without_improvement >= args.patience:
+                    print(f"\nEarly stopping - val loss se nije poboljsao {args.patience} epoha zaredom.")
+                    break
+
+        # Plotovi
+        curves_path = os.path.join(args.checkpoint_dir, "training_curves.png")
+        plot_training_curves(train_losses, val_losses, train_f1s, val_f1s, train_hammings, val_hammings, curves_path)
+        print(f"\nKrive sacuvane: {curves_path}")
+
+        # Test evaluacija sa najboljim modelom
+        checkpoint = torch.load(checkpoint_path, map_location=device)
+        model.load_state_dict(checkpoint["model_state"])
+        test_loss, test_f1, test_hamming = run_epoch(model, test_loader, optimizer, device, max_items, pos_weight, train=False, lenient=args.lenient_loss)
+        print(f"Test | Loss: {test_loss:.4f} | F1: {test_f1:.3f} | Hamming: {test_hamming:.3f}")
+
+        mlflow.log_metrics({
+            "test_loss":    test_loss,
+            "test_f1":      test_f1,
+            "test_hamming": test_hamming,
+        })
+
+        mlflow.log_artifact(checkpoint_path)
+        mlflow.log_artifact(curves_path)
 
 
 
