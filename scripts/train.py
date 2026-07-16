@@ -21,15 +21,13 @@ import matplotlib.pyplot as plt
 from kst.model import KSTTransformer
 from kst.dataset import make_dataloaders, make_loss_mask, make_lenient_loss_mask
 from util.metrics import compute_pos_weight, compute_f1, compute_hamming
-
-
-_SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
-_ROOT_DIR    = os.path.join(_SCRIPTS_DIR, "..")
+from util.paths import ROOT_DIR, DATA_DIR, CHECKPOINT_DIR, resolve_path
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Trening skripta")
-    parser.add_argument("--data",            type=str,   default=os.path.join(_ROOT_DIR, "data", "kst_dataset_2-10items_80k_weighted.npz"))
+    parser.add_argument("--data",            type=str,   default="kst_dataset_2-10items_80k_weighted.npz",
+                        help="Ime fajla u data/ ili puna putanja")
     parser.add_argument("--epochs",          type=int,   default=50)
     parser.add_argument("--batch-size",      type=int,   default=64)
     parser.add_argument("--lr",              type=float, default=0.000364)
@@ -41,11 +39,13 @@ def parse_args():
     parser.add_argument("--val-ratio",       type=float, default=0.2)
     parser.add_argument("--test-ratio",      type=float, default=0.1)
     parser.add_argument("--seed",            type=int,   default=42)
-    parser.add_argument("--checkpoint-dir",  type=str,   default=os.path.join(_ROOT_DIR, "checkpoints"))
+    parser.add_argument("--checkpoint-dir",  type=str,   default=str(CHECKPOINT_DIR))
     parser.add_argument("--patience",        type=int,   default=20)
     parser.add_argument("--lenient-loss",    action="store_true", default=False,
                         help="Ne kaznjava u loss-u tranzitivno validne, ali nedirektne predikcije")
-    return parser.parse_args()
+    args = parser.parse_args()
+    args.data = str(resolve_path(args.data, DATA_DIR))
+    return args
 
 
 def run_epoch(model, loader, optimizer, device, max_items, pos_weight: torch.Tensor, train: bool, lenient: bool = False):
@@ -127,7 +127,7 @@ def main():
     # NOTE: Novije verzije MLflow-a stavljaju cist file-store (./mlruns metapodaci) u
     # "maintenance mode" - koristimo SQLite backend za metapodatke (params/metrics),
     # artifact-i (checkpoint, krive) i dalje idu u lokalni ./mlruns folder.
-    mlflow.set_tracking_uri(f"sqlite:///{os.path.join(_ROOT_DIR, 'mlflow.db')}")
+    mlflow.set_tracking_uri(f"sqlite:///{ROOT_DIR / 'mlflow.db'}")
 
     with mlflow.start_run():
         mlflow.log_params(vars(args))

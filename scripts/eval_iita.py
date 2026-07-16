@@ -7,7 +7,6 @@ Primer pokretanja:
 """
 
 import argparse
-import os
 import time
 import numpy as np
 import torch
@@ -16,21 +15,24 @@ from learning_spaces.kst.iita import iita_exclude_transitive
 from kst.dataset import make_dataloaders
 from kst.model import KSTTransformer
 from util.metrics import metrics_np, metrics_lenient, transitive_closure_matrix
-
-_SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
-_ROOT_DIR    = os.path.join(_SCRIPTS_DIR, "..")
+from util.paths import DATA_DIR, CHECKPOINT_DIR, resolve_path
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Evaluacija IITA vs KST Transformer")
-    parser.add_argument("--data",        type=str,   default=os.path.join(_ROOT_DIR, "data", "kst_dataset_2-10items_80k_weighted.npz"))
-    parser.add_argument("--checkpoint",  type=str,   default=os.path.join(_ROOT_DIR, "checkpoints", "best.pt"))
-    parser.add_argument("--num-samples", type=int,   default=200,  help="Broj uzoraka za IITA")
+    parser.add_argument("--data",        type=str,   default="kst_dataset_2-10items_80k_weighted.npz",
+                        help="Ime fajla u data/ ili puna putanja")
+    parser.add_argument("--checkpoint",  type=str,   default="best.pt",
+                        help="Ime fajla u checkpoints/ ili puna putanja")
+    parser.add_argument("--num-samples", type=int,   default=200,  help="Broj uzoraka iz test skupa")
     parser.add_argument("--val-ratio",   type=float, default=0.2)
     parser.add_argument("--test-ratio",  type=float, default=0.1)
     parser.add_argument("--seed",        type=int,   default=42)
     parser.add_argument("--batch-size",  type=int,   default=64)
-    return parser.parse_args()
+    args = parser.parse_args()
+    args.data = str(resolve_path(args.data, DATA_DIR))
+    args.checkpoint = str(resolve_path(args.checkpoint, CHECKPOINT_DIR))
+    return args
 
 
 def run_iita(X_np: np.ndarray, Y_np: np.ndarray, item_counts_np: np.ndarray, num_samples: int, v: int = 1):

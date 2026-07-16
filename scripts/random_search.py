@@ -17,24 +17,27 @@ import torch.nn.functional as F
 from kst.model import KSTTransformer
 from kst.dataset import make_dataloaders, make_loss_mask, make_lenient_loss_mask
 from util.metrics import compute_pos_weight
-
-_SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
-_ROOT_DIR    = os.path.join(_SCRIPTS_DIR, "..")
+from util.paths import DATA_DIR, CHECKPOINT_DIR, resolve_path
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Random search za hiperparametre")
-    parser.add_argument("--data",        type=str,   default=os.path.join(_ROOT_DIR, "data", "kst_dataset_2-10items_80k_weighted.npz"))
+    parser.add_argument("--data",        type=str,   default="kst_dataset_2-10items_80k_weighted.npz",
+                        help="Ime fajla u data/ ili puna putanja")
     parser.add_argument("--trials",      type=int,   default=30,  help="Broj nasumicnih kombinacija (default: 20)")
     parser.add_argument("--epochs",      type=int,   default=30,  help="Epohe po kombinaciji (default: 30)")
     parser.add_argument("--patience",    type=int,   default=10,  help="Early stopping patience (default: 10)")
     parser.add_argument("--val-ratio",   type=float, default=0.2)
     parser.add_argument("--test-ratio",  type=float, default=0.1)
     parser.add_argument("--seed",        type=int,   default=42)
-    parser.add_argument("--output",      type=str,   default=os.path.join(_ROOT_DIR, "checkpoints", "random_search_10items.csv"))
+    parser.add_argument("--output",      type=str,   default="random_search_10items.csv",
+                        help="Ime fajla u checkpoints/ ili puna putanja")
     parser.add_argument("--lenient-loss", action="store_true", default=False,
                         help="Ne kaznjava u loss-u tranzitivno validne, ali nedirektne predikcije")
-    return parser.parse_args()
+    args = parser.parse_args()
+    args.data = str(resolve_path(args.data, DATA_DIR))
+    args.output = str(resolve_path(args.output, CHECKPOINT_DIR))
+    return args
 
 
 # ---------------------------------------------------------------------------

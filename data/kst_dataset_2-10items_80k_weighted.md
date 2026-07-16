@@ -11,7 +11,7 @@ generator_args:
   lg: 0.05
   ce_std: 0.03
   lg_std: 0.02
-  output: D:\skola\diplomski\kst-transformer\scripts\..\data\kst_dataset_2-10items_80k_weighted.npz
+  output: kst_dataset_2-10items_80k_weighted.npz
   seed: 42
   weighted: true
 git_commit: 7eb1dd949c0df5c148473e02eea1f0d5fe0027f1

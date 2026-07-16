@@ -17,7 +17,6 @@ Koristi:
 """
 
 import argparse
-import os
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -26,9 +25,7 @@ import numpy as np
 import yaml
 
 from util.generate_dataset_util import generate_dataset
-
-_SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
-_ROOT_DIR    = os.path.join(_SCRIPTS_DIR, "..")
+from util.paths import DATA_DIR, resolve_path
 
 
 def write_dataset_card(output_path: Path, args: argparse.Namespace, item_counts: np.ndarray) -> None:
@@ -41,11 +38,14 @@ def write_dataset_card(output_path: Path, args: argparse.Namespace, item_counts:
         git_commit = None
 
     n = len(item_counts)
+    generator_args = dict(vars(args))
+    generator_args["output"] = output_path.name
+
     frontmatter = {
         "dataset_name":   output_path.stem,
         "generated_by":   "scripts/generate_dataset.py",
         "generated_at":   datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "generator_args": vars(args),
+        "generator_args": generator_args,
         "git_commit":     git_commit,
     }
 
@@ -87,7 +87,7 @@ def build_default_output(args: argparse.Namespace) -> str:
     items_tag = f"{args.max_items}items" if args.min_items == args.max_items else f"{args.min_items}-{args.max_items}items"
     weighted_tag = "weighted" if args.weighted else "uniform"
     filename = f"kst_dataset_{items_tag}_{samples_tag}_{weighted_tag}.npz"
-    return os.path.join(_ROOT_DIR, "data", filename)
+    return str(DATA_DIR / filename)
 
 
 def main():
@@ -111,7 +111,8 @@ def main():
     parser.add_argument("--lg-std",      type=float, default=0.02,
                         help="Std za LG noise (default: 0.02)")
     parser.add_argument("--output",      type=str,   default=None,
-                        help="Output fajl (.npz format); ako nije zadat, konstruise se automatski iz parametara (broj pitanja, broj uzoraka, weighted/uniform)")
+                        help="Output fajl (.npz format) - samo ime (upisuje se u data/) ili puna putanja; "
+                             "ako nije zadat, konstruise se automatski iz parametara (broj pitanja, broj uzoraka, weighted/uniform)")
     parser.add_argument("--seed",        type=int,   default=42,
                         help="Random seed (default: 42)")
     parser.add_argument("--weighted",    action="store_true", default=False,
@@ -120,6 +121,8 @@ def main():
 
     if args.output is None:
         args.output = build_default_output(args)
+    else:
+        args.output = str(resolve_path(args.output, DATA_DIR))
 
     np.random.seed(args.seed)
 
