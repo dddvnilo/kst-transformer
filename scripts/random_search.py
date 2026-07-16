@@ -24,14 +24,14 @@ _ROOT_DIR    = os.path.join(_SCRIPTS_DIR, "..")
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Random search za hiperparametre")
-    parser.add_argument("--data",        type=str,   default=os.path.join(_ROOT_DIR, "data", "kst_dataset_weighted.npz"))
-    parser.add_argument("--trials",      type=int,   default=20,  help="Broj nasumicnih kombinacija (default: 20)")
+    parser.add_argument("--data",        type=str,   default=os.path.join(_ROOT_DIR, "data", "kst_dataset_2-10items_80k_weighted.npz"))
+    parser.add_argument("--trials",      type=int,   default=30,  help="Broj nasumicnih kombinacija (default: 20)")
     parser.add_argument("--epochs",      type=int,   default=30,  help="Epohe po kombinaciji (default: 30)")
     parser.add_argument("--patience",    type=int,   default=10,  help="Early stopping patience (default: 10)")
     parser.add_argument("--val-ratio",   type=float, default=0.2)
     parser.add_argument("--test-ratio",  type=float, default=0.1)
     parser.add_argument("--seed",        type=int,   default=42)
-    parser.add_argument("--output",      type=str,   default=os.path.join(_ROOT_DIR, "checkpoints", "random_search.csv"))
+    parser.add_argument("--output",      type=str,   default=os.path.join(_ROOT_DIR, "checkpoints", "random_search_10items.csv"))
     parser.add_argument("--lenient-loss", action="store_true", default=False,
                         help="Ne kaznjava u loss-u tranzitivno validne, ali nedirektne predikcije")
     return parser.parse_args()
@@ -41,18 +41,18 @@ def parse_args():
 # Prostor hiperparametara
 # ---------------------------------------------------------------------------
 
-D_MODELS       = [64, 128, 256]
-NUM_LAYERS     = [2, 3, 4]
-DIM_FEEDFORWARD = [128, 256, 512]
-DROPOUTS       = [0.1, 0.2, 0.3]
-BATCH_SIZES    = [32, 64, 128]
-LR_RANGE       = (1e-4, 1e-3)   # log-uniform
+D_MODELS        = [64, 128, 256, 384]
+NUM_LAYERS      = [2, 3, 4, 5, 6]
+DIM_FEEDFORWARD = [128, 256, 512, 1024]
+DROPOUTS        = [0.1, 0.2, 0.3]
+BATCH_SIZES     = [32, 64, 128]
+LR_RANGE        = (1e-4, 1e-3)   # log-uniform
 
 
 def sample_hparams(rng: random.Random) -> dict:
     d_model = rng.choice(D_MODELS)
     # nhead mora da deli d_model
-    valid_nheads = [h for h in [2, 4, 8] if d_model % h == 0]
+    valid_nheads = [h for h in [2, 4, 8, 16] if d_model % h == 0]
     nhead = rng.choice(valid_nheads)
 
     lr = 10 ** rng.uniform(*[torch.log10(torch.tensor(x)).item() for x in LR_RANGE])
@@ -132,6 +132,16 @@ def train_trial(hparams, train_loader, val_loader, students, max_items, device, 
 # Main
 # ---------------------------------------------------------------------------
 
+def save_results_csv(output_path: str, results: list) -> None:
+    """Upisuje trenutne rezultate u CSV - poziva se posle svakog trial-a"""
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    fieldnames = ["val_loss", "stopped_epoch", "d_model", "nhead", "num_layers", "dim_feedforward", "dropout", "batch_size", "lr"]
+    with open(output_path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(results)
+
+
 def main():
     args = parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -171,17 +181,11 @@ def main():
         print(f"-> val_loss={best_val_loss:.4f}  (epoha {stopped_epoch})")
 
         results.append({"val_loss": best_val_loss, "stopped_epoch": stopped_epoch, **hparams})
+        save_results_csv(args.output, results)
 
-    # Sortiraj po val_loss
+    # Sortiraj po val_loss i sacuvaj
     results.sort(key=lambda r: r["val_loss"])
-
-    # Sacuvaj CSV
-    os.makedirs(os.path.dirname(args.output), exist_ok=True)
-    fieldnames = ["val_loss", "stopped_epoch", "d_model", "nhead", "num_layers", "dim_feedforward", "dropout", "batch_size", "lr"]
-    with open(args.output, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(results)
+    save_results_csv(args.output, results)
 
     print(f"\nRezultati sacuvani: {args.output}")
     print(f"\nTop 5 kombinacija:")

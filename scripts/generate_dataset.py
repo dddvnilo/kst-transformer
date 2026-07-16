@@ -80,6 +80,16 @@ def write_dataset_card(output_path: Path, args: argparse.Namespace, item_counts:
     print(f"Kartica sacuvana: {card_path}")
 
 
+def build_default_output(args: argparse.Namespace) -> str:
+    """Konstruise default ime .npz fajla iz parametara generisanja 
+    npr. kst_dataset_10items_80k_weighted.npz)."""
+    samples_tag = f"{args.num_samples // 1000}k" if args.num_samples % 1000 == 0 else str(args.num_samples)
+    items_tag = f"{args.max_items}items" if args.min_items == args.max_items else f"{args.min_items}-{args.max_items}items"
+    weighted_tag = "weighted" if args.weighted else "uniform"
+    filename = f"kst_dataset_{items_tag}_{samples_tag}_{weighted_tag}.npz"
+    return os.path.join(_ROOT_DIR, "data", filename)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="KST Dataset Generator"
@@ -100,13 +110,16 @@ def main():
                         help="Std za CE noise (default: 0.03)")
     parser.add_argument("--lg-std",      type=float, default=0.02,
                         help="Std za LG noise (default: 0.02)")
-    parser.add_argument("--output",      type=str,   default=os.path.join(_ROOT_DIR, "data", "kst_dataset.npz"),
-                        help="Output fajl (.npz format)")
+    parser.add_argument("--output",      type=str,   default=None,
+                        help="Output fajl (.npz format); ako nije zadat, konstruise se automatski iz parametara (broj pitanja, broj uzoraka, weighted/uniform)")
     parser.add_argument("--seed",        type=int,   default=42,
                         help="Random seed (default: 42)")
     parser.add_argument("--weighted",    action="store_true", default=False,
                         help="Linearne tezine — vise pitanja = veci udeo uzoraka")
     args = parser.parse_args()
+
+    if args.output is None:
+        args.output = build_default_output(args)
 
     np.random.seed(args.seed)
 
