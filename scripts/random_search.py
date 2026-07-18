@@ -32,11 +32,15 @@ def parse_args():
     parser.add_argument("--seed",        type=int,   default=42)
     parser.add_argument("--output",      type=str,   default="random_search_10items.csv",
                         help="Ime fajla u checkpoints/ ili puna putanja")
+    parser.add_argument("--history",     type=str,   default="random_search_history.csv",
+                        help="Ime fajla u checkpoints/ ili puna putanja - koristi se da se izbegnu ponovljene "
+                             "kombinacije")
     parser.add_argument("--lenient-loss", action="store_true", default=False,
                         help="Ne kaznjava u loss-u tranzitivno validne, ali nedirektne predikcije")
     args = parser.parse_args()
     args.data = str(resolve_path(args.data, DATA_DIR))
     args.output = str(resolve_path(args.output, CHECKPOINT_DIR))
+    args.history = str(resolve_path(args.history, CHECKPOINT_DIR))
     return args
 
 
@@ -51,24 +55,41 @@ DROPOUTS        = [0.1, 0.2, 0.3]
 BATCH_SIZES     = [32, 64, 128]
 LR_RANGE        = (1e-4, 1e-3)   # log-uniform
 
+# Diskretni deo prostora (bez lr, koji je kontinualan) - koristi se za detekciju
+# vec isprobanih kombinacija preko --history fajla.
+DISCRETE_KEYS = ["d_model", "nhead", "num_layers", "dim_feedforward", "dropout", "batch_size"]
 
-def sample_hparams(rng: random.Random) -> dict:
-    d_model = rng.choice(D_MODELS)
-    # nhead mora da deli d_model
-    valid_nheads = [h for h in [2, 4, 8, 16] if d_model % h == 0]
-    nhead = rng.choice(valid_nheads)
 
-    lr = 10 ** rng.uniform(*[torch.log10(torch.tensor(x)).item() for x in LR_RANGE])
+def discrete_key(hparams: dict) -> tuple:
+    return tuple(hparams[k] for k in DISCRETE_KEYS)
 
-    return {
-        "d_model":         d_model,
-        "nhead":           nhead,
-        "num_layers":      rng.choice(NUM_LAYERS),
-        "dim_feedforward": rng.choice(DIM_FEEDFORWARD),
-        "dropout":         rng.choice(DROPOUTS),
-        "batch_size":      rng.choice(BATCH_SIZES),
-        "lr":              round(lr, 6),
-    }
+
+def sample_hparams(rng: random.Random, exclude: set = frozenset(), max_attempts: int = 1000) -> dict:
+    for _ in range(max_attempts):
+        d_model = rng.choice(D_MODELS)
+        # nhead mora da deli d_model
+        valid_nheads = [h for h in [2, 4, 8, 16] if d_model % h == 0]
+        nhead = rng.choice(valid_nheads)
+
+        lr = 10 ** rng.uniform(*[torch.log10(torch.tensor(x)).item() for x in LR_RANGE])
+
+        hparams = {
+            "d_model":         d_model,
+            "nhead":           nhead,
+            "num_layers":      rng.choice(NUM_LAYERS),
+            "dim_feedforward": rng.choice(DIM_FEEDFORWARD),
+            "dropout":         rng.choice(DROPOUTS),
+            "batch_size":      rng.choice(BATCH_SIZES),
+            "lr":              round(lr, 6),
+        }
+
+        if discrete_key(hparams) not in exclude:
+            return hparams
+
+    raise RuntimeError(
+        f"Nije pronadjena nova kombinacija hiperparametara posle {max_attempts} pokusaja - "
+        "prostor pretrage je verovatno skoro/potpuno iscrpljen (videti --history fajl)."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -145,6 +166,31 @@ def save_results_csv(output_path: str, results: list) -> None:
         writer.writerows(results)
 
 
+def load_tried_combos(history_path: str) -> set:
+    """Cita --history fajl (akumulira se kroz sva pokretanja) i vraca skup vec isprobanih
+    diskretnih kombinacija hiperparametara."""
+    if not os.path.exists(history_path):
+        return set()
+    tried = set()
+    with open(history_path, newline="") as f:
+        for row in csv.DictReader(f):
+            tried.add(tuple(
+                float(row[k]) if k == "dropout" else int(row[k]) for k in DISCRETE_KEYS
+            ))
+    return tried
+
+
+def append_history(history_path: str, hparams: dict) -> None:
+    """Dodaje jednu isprobanu kombinaciju u --history fajl (append)."""
+    os.makedirs(os.path.dirname(history_path), exist_ok=True)
+    file_exists = os.path.exists(history_path)
+    with open(history_path, "a", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=DISCRETE_KEYS)
+        if not file_exists:
+            writer.writeheader()
+        writer.writerow({k: hparams[k] for k in DISCRETE_KEYS})
+
+
 def main():
     args = parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -160,8 +206,13 @@ def main():
     rng = random.Random(args.seed)
     results = []
 
+    tried = load_tried_combos(args.history)
+    print(f"Vec isprobanih kombinacija (iz {args.history}): {len(tried)}\n")
+
     for trial in range(1, args.trials + 1):
-        hparams = sample_hparams(rng)
+        hparams = sample_hparams(rng, exclude=tried)
+        tried.add(discrete_key(hparams))
+        append_history(args.history, hparams)
 
         train_loader, val_loader, _ = make_dataloaders(
             args.data,

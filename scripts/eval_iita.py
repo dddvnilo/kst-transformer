@@ -22,7 +22,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Evaluacija IITA vs KST Transformer")
     parser.add_argument("--data",        type=str,   default="kst_dataset_2-10items_80k_weighted.npz",
                         help="Ime fajla u data/ ili puna putanja")
-    parser.add_argument("--checkpoint",  type=str,   default="best.pt",
+    parser.add_argument("--checkpoint",  type=str,   default="best_10items_80k_weighted.pt",
                         help="Ime fajla u checkpoints/ ili puna putanja")
     parser.add_argument("--num-samples", type=int,   default=200,  help="Broj uzoraka iz test skupa")
     parser.add_argument("--val-ratio",   type=float, default=0.2)
@@ -192,7 +192,7 @@ def main():
     print(f"{'KST Transformer':<22} {tr_strict[0]:>10.3f} {tr_strict[1]:>10.3f} {tr_time:>12.1f}")
     print(f"{'='*W}")
 
-    # Scoreboard 2: Lenient (tranzitivne veze se ne kažnjavaju)
+    # Scoreboard 2: Lenient (tranzitivne veze se ne kaznjavaju)
     print(f"\n{'='*W}")
     print(f"  Lenient (tranzitivne veze se ne kaznjavaaju)")
     print(f"{'='*W}")
