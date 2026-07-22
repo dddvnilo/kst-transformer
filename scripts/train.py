@@ -40,7 +40,7 @@ def parse_args():
     parser.add_argument("--test-ratio",      type=float, default=0.1)
     parser.add_argument("--seed",            type=int,   default=42)
     parser.add_argument("--checkpoint-dir",  type=str,   default=str(CHECKPOINT_DIR))
-    parser.add_argument("--patience",        type=int,   default=10)
+    parser.add_argument("--patience",        type=int,   default=200)
     parser.add_argument("--lenient-loss",    action="store_true", default=False,
                         help="Ne kaznjava u loss-u tranzitivno validne, ali nedirektne predikcije")
     args = parser.parse_args()
