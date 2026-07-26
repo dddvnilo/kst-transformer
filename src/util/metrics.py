@@ -58,9 +58,23 @@ def transitive_closure_matrix(adj: np.ndarray) -> np.ndarray:
     return tc
 
 
+def metrics_closure(pred_adj: np.ndarray, true_adj: np.ndarray, n_items: int):
+    """
+    Full transitive closure F1 i Hamming - poredi SIROV output (bez ikakve
+    transformacije nad predikcijom) sa punim tranzitivnim zatvorenjem ground
+    truth-a. Za razliku od lenient, promasene tranzitivne veze se ovde kaznjavaju
+    (FN), jer je ground truth kompletna relacija dostiznosti:
+      TP: predvidjeno i u zatvorenju Y
+      FP: predvidjeno ali van zatvorenja Y
+      FN: nije predvidjeno a jeste u zatvorenju Y (i direktne i tranzitivne)
+    """
+    true_closed = transitive_closure_matrix(true_adj[:n_items, :n_items])
+    return metrics_np(pred_adj, true_closed.astype(np.float32), n_items)
+
+
 def metrics_lenient(pred_adj: np.ndarray, true_adj: np.ndarray, n_items: int):
     """
-    Lenient F1 i Hamming — tranzitivne veze se ne kažnjavaju:
+    Lenient F1 i Hamming - tranzitivne veze se ne kažnjavaju:
       TP: predvidjeno i validno (u tranzitivnom zatvorenju Y)
       FP: predvidjeno ali ne moze se izvesti iz Y
       FN: nije predvidjeno a jeste direktna veza u Y (Hasse)

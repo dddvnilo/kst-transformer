@@ -12,6 +12,7 @@ from util.metrics import (
     compute_pos_weight,
     metrics_np,
     metrics_lenient,
+    metrics_closure,
     transitive_closure_matrix,
 )
 from util.generate_dataset_util import transitive_closure
@@ -119,3 +120,40 @@ def test_metrics_lenient_fn_only_counts_direct_hasse_edges():
     # tp=0, fp=0, fn=2 (samo direktne (0,1) i (1,2)) -> f1 = 0
     assert f1 == 0.0
     assert hamming == 2 / 6
+
+
+def test_metrics_closure_penalizes_missed_transitive_edges():
+    # closure kaznjava promasenu tranzitivnu vezu (FN), za razliku od lenient
+    n = 3
+    true_adj = np.zeros((n, n))
+    true_adj[0, 1] = 1
+    true_adj[1, 2] = 1
+    # zatvorenje sadrzi i (0,2)
+
+    pred_adj = np.zeros((n, n))
+    pred_adj[0, 1] = 1
+    pred_adj[1, 2] = 1
+    # (0,2) NIJE predvidjeno
+
+    f1_c, hamming_c = metrics_closure(pred_adj, true_adj, n)
+    f1_l, _         = metrics_lenient(pred_adj, true_adj, n)
+
+    # closure: tp=2, fp=0, fn=1 (promasena tranzitivna (0,2)) -> f1 = 4/5
+    assert f1_c == 4 / 5
+    assert hamming_c == 1 / 6
+    # lenient ne kaznjava tu tranzitivnu vezu -> strogo popustljivije
+    assert f1_l > f1_c
+
+
+def test_metrics_closure_perfect_when_prediction_is_full_closure():
+    # ako predikcija sadrzi celo zatvorenje, closure F1 == 1.0
+    n = 3
+    true_adj = np.zeros((n, n))
+    true_adj[0, 1] = 1
+    true_adj[1, 2] = 1
+
+    pred_adj = transitive_closure_matrix(true_adj).astype(np.float32)
+
+    f1_c, hamming_c = metrics_closure(pred_adj, true_adj, n)
+    assert f1_c == 1.0
+    assert hamming_c == 0.0
