@@ -30,9 +30,9 @@ def parse_args():
     parser.add_argument("--val-ratio",   type=float, default=0.2)
     parser.add_argument("--test-ratio",  type=float, default=0.1)
     parser.add_argument("--seed",        type=int,   default=42)
-    parser.add_argument("--output",      type=str,   default="random_search_10items.csv",
+    parser.add_argument("--output",      type=str,   default="random_search_10items_lenient.csv",
                         help="Ime fajla u checkpoints/ ili puna putanja")
-    parser.add_argument("--history",     type=str,   default="random_search_history.csv",
+    parser.add_argument("--history",     type=str,   default="random_search_history_lenient.csv",
                         help="Ime fajla u checkpoints/ ili puna putanja - koristi se da se izbegnu ponovljene "
                              "kombinacije")
     parser.add_argument("--lenient-loss", action="store_true", default=False,
