@@ -63,7 +63,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Evaluacija IITA vs KST Transformer")
     parser.add_argument("--data",        type=str,   default="kst_dataset_2-10items_80k_weighted.npz",
                         help="Ime fajla u data/ ili puna putanja")
-    parser.add_argument("--checkpoint",  type=str,   default="best.pt",
+    parser.add_argument("--checkpoint",  type=str,   default="best_10items_80k_weighted_200epochs_lenient.pt",
                         help="Ime fajla u checkpoints/ ili puna putanja")
     parser.add_argument("--num-samples", type=int,   default=200,  help="Broj uzoraka iz test skupa")
     parser.add_argument("--val-ratio",   type=float, default=0.2)
@@ -147,7 +147,8 @@ def run_transformer(model, X: torch.Tensor, Y: torch.Tensor, item_counts: torch.
     records = []
     for i in range(len(all_pred)):
         n        = int(all_ic[i])
-        pred_adj = (1 / (1 + np.exp(-all_pred[i, :n, :n])) > 0.5).astype(np.float32)
+        # sigmoid(x) > 0.5  <=>  x > 0  (izbegava overflow u exp za velike negativne logite)
+        pred_adj = (all_pred[i, :n, :n] > 0).astype(np.float32)
         true_adj = all_target[i, :n, :n]
         f1, hamming     = metrics_np(pred_adj, true_adj, n)
         f1_l, hamming_l = metrics_lenient(pred_adj, true_adj, n)

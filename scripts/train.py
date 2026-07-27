@@ -1,13 +1,5 @@
 """
 KST Transformer - Trening skripta
-
-Primer pokretanja:
-  python train.py \
-      --data ../data/kst_dataset.npz \
-      --epochs 50 \
-      --batch-size 32 \
-      --lr 1e-3 \
-      --checkpoint-dir ../checkpoints
 """
 
 import argparse
