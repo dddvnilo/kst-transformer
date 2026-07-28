@@ -13,6 +13,7 @@ from util.metrics import (
     metrics_np,
     metrics_lenient,
     metrics_closure,
+    metrics_closure_pred,
     transitive_closure_matrix,
 )
 from util.generate_dataset_util import transitive_closure
@@ -157,3 +158,26 @@ def test_metrics_closure_perfect_when_prediction_is_full_closure():
     f1_c, hamming_c = metrics_closure(pred_adj, true_adj, n)
     assert f1_c == 1.0
     assert hamming_c == 0.0
+
+
+def test_metrics_closure_pred_closes_prediction_before_compare():
+    # closure_pred zatvara predikciju pre poredjenja: minimalna (Hasse) predikcija
+    # koja je tacna dobija F1 = 1.0, dok je obican closure kaznjava za (0,2)
+    n = 3
+    true_adj = np.zeros((n, n))
+    true_adj[0, 1] = 1
+    true_adj[1, 2] = 1
+
+    pred_adj = np.zeros((n, n))
+    pred_adj[0, 1] = 1
+    pred_adj[1, 2] = 1
+    # (0,2) NIJE predvidjeno - ali se izvodi zatvaranjem predikcije
+
+    f1_cp, hamming_cp = metrics_closure_pred(pred_adj, true_adj, n)
+    f1_c,  _          = metrics_closure(pred_adj, true_adj, n)
+
+    # zatvaranjem predikcije (0,2) postaje TP -> savrseno poklapanje
+    assert f1_cp == 1.0
+    assert hamming_cp == 0.0
+    # bez zatvaranja predikcije, isti ulaz je strogo losije ocenjen
+    assert f1_c < f1_cp

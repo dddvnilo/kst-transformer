@@ -72,6 +72,16 @@ def metrics_closure(pred_adj: np.ndarray, true_adj: np.ndarray, n_items: int):
     return metrics_np(pred_adj, true_closed.astype(np.float32), n_items)
 
 
+def metrics_closure_pred(pred_adj: np.ndarray, true_adj: np.ndarray, n_items: int):
+    """
+    Kao metrics_closure, ali se PREDIKCIJA prvo tranzitivno zatvara pa tek onda
+    poredi sa zatvorenjem Y (close-both). Model se time ne kaznjava za implicitne
+    tranzitivne veze - meri se da li je pogodjena ista relacija dostiznosti.
+    """
+    pred_closed = transitive_closure_matrix(pred_adj[:n_items, :n_items])
+    return metrics_closure(pred_closed.astype(np.float32), true_adj, n_items)
+
+
 def metrics_lenient(pred_adj: np.ndarray, true_adj: np.ndarray, n_items: int):
     """
     Lenient F1 i Hamming - tranzitivne veze se ne kažnjavaju:

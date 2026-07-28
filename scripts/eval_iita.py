@@ -1,20 +1,25 @@
 """
 Evaluacija IITA vs KST Transformer na test skupu.
 
-Rezultati se cuvaju kao plotovi u checkpoints/eval plots/, za tri moda (strict / lenient / closure), po 3 plota:
+Rezultati se cuvaju kao plotovi u checkpoints/eval plots/, za cetiri moda
+(strict / lenient / closure / closure2), po 3 plota:
   - "_overall"       : tabela F1 / Hamming / Vreme za IITA (v=1,2,3) i transformer
   - "_f1_by_items"    : F1 po broju pitanja u testu, za sve 4 metode
   - "_hamming_by_items": Hamming po broju pitanja u testu, za sve 4 metode
 
 Modovi evaluacije:
-  - strict  : ground truth = Hasse (min. skup); IITA output se tranzitivno
-redukuje (transitive_reduction) pre poredjenja 
+  - strict   : ground truth = Hasse (min. skup); IITA output se tranzitivno
+redukuje (transitive_reduction) pre poredjenja
 (obzirom da je transformer vec treniran na tranzitivno redukovanom skupu podataka)
 
-  - lenient : tacne tranzitivne veze se ne kaznjavaju (metrics_lenient)
+  - lenient  : tacne tranzitivne veze se ne kaznjavaju (metrics_lenient)
 
-  - closure : ground truth = puno tranzitivno zatvorenje; sirov output se poredi
+  - closure  : ground truth = puno tranzitivno zatvorenje; sirov output se poredi
 takav kakav jeste, promasene tranzitivne veze SE kaznjavaju (FN)
+
+  - closure2 : kao closure, ali se IZLAZ TRANSFORMERA prvo tranzitivno zatvara
+(close-both); IITA izlaz se ne dira (vec je kvazi-poredak), pa je za IITA
+closure2 identican closure modu
 
 Primer pokretanja:
   python eval_iita.py
@@ -33,7 +38,7 @@ import matplotlib.pyplot as plt
 from learning_spaces.kst.iita import iita
 from kst.dataset import make_dataloaders
 from kst.model import KSTTransformer
-from util.metrics import metrics_np, metrics_lenient, metrics_closure
+from util.metrics import metrics_np, metrics_lenient, metrics_closure, metrics_closure_pred
 from util.generate_dataset_util import transitive_reduction
 from util.paths import DATA_DIR, CHECKPOINT_DIR, resolve_path
 
@@ -51,11 +56,12 @@ INK      = "#0b0b0b"
 INK_2    = "#52514e"
 
 # Rezimi evaluacije: (tag za ime fajla, naslov, f1_idx, hamming_idx u record tuple-u)
-# record = (n, f1, hamming, f1_l, hamming_l, f1_c, hamming_c)
+# record = (n, f1, hamming, f1_l, hamming_l, f1_c, hamming_c, f1_c2, hamming_c2)
 MODES = [
-    ("strict",  "Strict (ground truth = Hasse dijagram)",               1, 2),
-    ("lenient", "Lenient (tranzitivne veze se ne kaznjavaju)",           3, 4),
-    ("closure", "Full transitive closure (puno zatvorenje se kaznjava)", 5, 6),
+    ("strict",   "Strict (ground truth = Hasse dijagram)",               1, 2),
+    ("lenient",  "Lenient (tranzitivne veze se ne kaznjavaju)",           3, 4),
+    ("closure",  "Full transitive closure (puno zatvorenje se kaznjava)", 5, 6),
+    ("closure2", "Full transitive closure 2 (izlaz modela zatvoren)",     7, 8),
 ]
 
 
@@ -80,7 +86,8 @@ def parse_args():
 
 def run_iita(X_np: np.ndarray, item_counts_np: np.ndarray, Y_np: np.ndarray, num_samples: int, v: int = 1):
     """Pokrece IITA nad test uzorcima, vraca listu po-uzorak rezultata:
-    (n, f1, hamming, f1_l, hamming_l, f1_c, hamming_c) - strict, lenient, closure."""
+    (n, f1, hamming, f1_l, hamming_l, f1_c, hamming_c, f1_c2, hamming_c2)
+    - strict, lenient, closure, closure2 (za IITA je closure2 == closure)."""
     records = []
     skipped = 0
 
@@ -109,7 +116,10 @@ def run_iita(X_np: np.ndarray, item_counts_np: np.ndarray, Y_np: np.ndarray, num
         f1, hamming     = metrics_np(pred_adj_reduced, y_true, n)
         f1_l, hamming_l = metrics_lenient(pred_adj_raw, y_true, n)
         f1_c, hamming_c = metrics_closure(pred_adj_raw, y_true, n)
-        records.append((n, f1, hamming, f1_l, hamming_l, f1_c, hamming_c))
+        # closure2 zatvara SAMO izlaz transformera; IITA izlaz je vec kvazi-poredak
+        # (tranzitivno zatvoren), pa je za IITA closure2 identican closure modu
+        f1_c2, hamming_c2 = f1_c, hamming_c
+        records.append((n, f1, hamming, f1_l, hamming_l, f1_c, hamming_c, f1_c2, hamming_c2))
 
         if (i + 1) % 50 == 0:
             print(f"  IITA v={v}: {i + 1}/{num_samples}")
@@ -123,7 +133,8 @@ def run_iita(X_np: np.ndarray, item_counts_np: np.ndarray, Y_np: np.ndarray, num
 def run_transformer(model, X: torch.Tensor, Y: torch.Tensor, item_counts: torch.Tensor,
                     device, batch_size: int):
     """Pokrece transformer na svim uzorcima, vraca listu po-uzorak rezultata:
-    (n, f1, hamming, f1_l, hamming_l, f1_c, hamming_c) - strict, lenient, closure."""
+    (n, f1, hamming, f1_l, hamming_l, f1_c, hamming_c, f1_c2, hamming_c2)
+    - strict, lenient, closure, closure2 (izlaz modela tranzitivno zatvoren)."""
     model.eval()
     all_pred, all_target, all_ic = [], [], []
 
@@ -150,10 +161,12 @@ def run_transformer(model, X: torch.Tensor, Y: torch.Tensor, item_counts: torch.
         # sigmoid(x) > 0.5  <=>  x > 0  (izbegava overflow u exp za velike negativne logite)
         pred_adj = (all_pred[i, :n, :n] > 0).astype(np.float32)
         true_adj = all_target[i, :n, :n]
-        f1, hamming     = metrics_np(pred_adj, true_adj, n)
-        f1_l, hamming_l = metrics_lenient(pred_adj, true_adj, n)
-        f1_c, hamming_c = metrics_closure(pred_adj, true_adj, n)
-        records.append((n, f1, hamming, f1_l, hamming_l, f1_c, hamming_c))
+        f1, hamming       = metrics_np(pred_adj, true_adj, n)
+        f1_l, hamming_l   = metrics_lenient(pred_adj, true_adj, n)
+        f1_c, hamming_c   = metrics_closure(pred_adj, true_adj, n)
+        # closure2: izlaz modela se tranzitivno zatvara pre poredjenja (close-both)
+        f1_c2, hamming_c2 = metrics_closure_pred(pred_adj, true_adj, n)
+        records.append((n, f1, hamming, f1_l, hamming_l, f1_c, hamming_c, f1_c2, hamming_c2))
 
     return records
 
