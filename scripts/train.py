@@ -11,7 +11,7 @@ import torch.nn.functional as F
 import matplotlib.pyplot as plt
 
 from kst.model import KSTTransformer
-from kst.dataset import make_dataloaders, make_loss_mask, make_lenient_loss_mask
+from kst.dataset import make_dataloaders, make_loss_mask, make_lenient_loss_mask, make_closure_target
 from util.metrics import compute_pos_weight, compute_f1, compute_hamming
 from util.paths import ROOT_DIR, DATA_DIR, CHECKPOINT_DIR, resolve_path
 
@@ -35,12 +35,17 @@ def parse_args():
     parser.add_argument("--patience",        type=int,   default=200)
     parser.add_argument("--lenient-loss",    action="store_true", default=False,
                         help="Ne kaznjava u loss-u tranzitivno validne, ali nedirektne predikcije")
+    parser.add_argument("--closure-loss",    action="store_true", default=False,
+                        help="Target je puno tranzitivno zatvorenje Y (model uci ceo skup implikacija)")
     args = parser.parse_args()
+    if args.lenient_loss and args.closure_loss:
+        parser.error("--lenient-loss i --closure-loss se medjusobno iskljucuju: lenient izbacuje "
+                     "tranzitivne celije iz loss-a, closure ih trazi kao pozitivne primere.")
     args.data = str(resolve_path(args.data, DATA_DIR))
     return args
 
 
-def run_epoch(model, loader, optimizer, device, max_items, pos_weight: torch.Tensor, train: bool, lenient: bool = False):
+def run_epoch(model, loader, optimizer, device, max_items, pos_weight: torch.Tensor, train: bool, lenient: bool = False, closure: bool = False):
     model.train(train)
     total_loss = 0.0
     all_pred, all_target, all_mask = [], [], []
@@ -50,13 +55,18 @@ def run_epoch(model, loader, optimizer, device, max_items, pos_weight: torch.Ten
             X, Y, item_counts = X.to(device), Y.to(device), item_counts.to(device)
 
             pred = model(X, item_counts)
+
+            # closure rezim: target je puno tranzitivno zatvorenje umesto Hasse dijagrama;
+            # maska ostaje standardna, tj. tranzitivne celije se traze kao pozitivni primeri
+            target = make_closure_target(Y) if closure else Y
+
             mask = make_loss_mask(item_counts, max_items)
             if lenient:
                 mask = make_lenient_loss_mask(Y, mask)
 
             # BCE loss nad pojedinacnim relacijama
             # zbog neizbalansiranosti 0 i 1 u matricama na output-u koristi se pos_weight -> kada model predivdi 0 a trebalo je 1 kaznjava se pos_weight puta
-            loss = F.binary_cross_entropy_with_logits(pred[mask], Y[mask], pos_weight=pos_weight)
+            loss = F.binary_cross_entropy_with_logits(pred[mask], target[mask], pos_weight=pos_weight)
 
             if train:
                 optimizer.zero_grad()
@@ -65,7 +75,8 @@ def run_epoch(model, loader, optimizer, device, max_items, pos_weight: torch.Ten
 
             total_loss += loss.item()
             all_pred.append(pred.detach())
-            all_target.append(Y)
+            # metrike se racunaju nad istim targetom nad kojim se racuna i loss
+            all_target.append(target)
             all_mask.append(mask)
 
     avg_loss = total_loss / len(loader)
@@ -148,8 +159,10 @@ def main():
 
         optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
-        pw = compute_pos_weight(train_loader, max_items, lenient=args.lenient_loss)
+        pw = compute_pos_weight(train_loader, max_items, lenient=args.lenient_loss, closure=args.closure_loss)
         pos_weight = torch.tensor([pw], device=device)
+        regime = "closure" if args.closure_loss else ("lenient" if args.lenient_loss else "strict")
+        print(f"Rezim treninga: {regime}")
         print(f"pos_weight: {pw:.2f}  (nula/jedinica odnos u trening setu)")
 
         os.makedirs(args.checkpoint_dir, exist_ok=True)
@@ -162,8 +175,8 @@ def main():
         train_hammings, val_hammings = [], []
 
         for epoch in range(1, args.epochs + 1):
-            train_loss, train_f1, train_hamming = run_epoch(model, train_loader, optimizer, device, max_items, pos_weight, train=True, lenient=args.lenient_loss)
-            val_loss,   val_f1,   val_hamming   = run_epoch(model, val_loader,   optimizer, device, max_items, pos_weight, train=False, lenient=args.lenient_loss)
+            train_loss, train_f1, train_hamming = run_epoch(model, train_loader, optimizer, device, max_items, pos_weight, train=True, lenient=args.lenient_loss, closure=args.closure_loss)
+            val_loss,   val_f1,   val_hamming   = run_epoch(model, val_loader,   optimizer, device, max_items, pos_weight, train=False, lenient=args.lenient_loss, closure=args.closure_loss)
 
             train_losses.append(train_loss)
             val_losses.append(val_loss)
@@ -213,7 +226,7 @@ def main():
         # Test evaluacija sa najboljim modelom
         checkpoint = torch.load(checkpoint_path, map_location=device)
         model.load_state_dict(checkpoint["model_state"])
-        test_loss, test_f1, test_hamming = run_epoch(model, test_loader, optimizer, device, max_items, pos_weight, train=False, lenient=args.lenient_loss)
+        test_loss, test_f1, test_hamming = run_epoch(model, test_loader, optimizer, device, max_items, pos_weight, train=False, lenient=args.lenient_loss, closure=args.closure_loss)
         print(f"Test | Loss: {test_loss:.4f} | F1: {test_f1:.3f} | Hamming: {test_hamming:.3f}")
 
         mlflow.log_metrics({

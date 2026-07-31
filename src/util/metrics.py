@@ -1,18 +1,27 @@
 import numpy as np
 import torch
 
-from kst.dataset import make_loss_mask, make_lenient_loss_mask
+from kst.dataset import make_loss_mask, make_lenient_loss_mask, make_closure_target
 
 
-def compute_pos_weight(loader, max_items: int, lenient: bool = False) -> float:
-    """Racuna pos_weight = (broj nula) / (broj jedinica) u trening setu."""
+def compute_pos_weight(loader, max_items: int, lenient: bool = False, closure: bool = False) -> float:
+    """
+    Racuna pos_weight = (broj nula) / (broj jedinica) u trening setu.
+
+    Mora da broji nad ISTIM targetom i maskom koje koristi trening petlja:
+      - lenient: uza maska (tranzitivno implicirane celije izbacene) - uklanjaju
+        se iskljucivo nule, pa pos_weight pada u odnosu na strict
+      - closure: target je tranzitivno zatvorenje (vise jedinica), pa pos_weight
+        opet pada u odnosu na strict
+    """
     total_pos = total_neg = 0
     for _, Y, item_counts in loader:
+        target = make_closure_target(Y) if closure else Y
         mask = make_loss_mask(item_counts, max_items)
         if lenient:
             mask = make_lenient_loss_mask(Y, mask)
-        total_pos += Y[mask].sum().item()
-        total_neg += (~Y[mask].bool()).sum().item()
+        total_pos += target[mask].sum().item()
+        total_neg += (~target[mask].bool()).sum().item()
     return total_neg / total_pos if total_pos > 0 else 1.0
 
 

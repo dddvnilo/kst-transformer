@@ -67,6 +67,23 @@ def batched_transitive_closure(Y_bool: torch.Tensor) -> torch.Tensor:
     return tc
 
 
+def make_closure_target(Y: torch.Tensor) -> torch.Tensor:
+    """
+    Pretvara Hasse dijagram Y u pun tranzitivno zatvoren target - relaciju
+    dostiznosti. Za razliku od lenient rezima (gde se tranzitivno implicirane
+    celije izbacuju iz loss-a), ovde one postaju POZITIVNI primeri koje model
+    treba da predvidi.
+
+    Napomena: zatvorenje je i relacija iz koje su odgovori studenata simulirani
+    (generate_dataset_util prosledjuje `impl_closed` u simu), pa je ovaj target
+    dosledan generisanim odgovorima - Hasse je samo njena tranzitivna redukcija.
+
+    :param Y: (batch, max_items, max_items) float - Hasse dijagram
+    :return:  (batch, max_items, max_items) float - tranzitivno zatvorenje
+    """
+    return batched_transitive_closure(Y.bool()).float()
+
+
 def make_lenient_loss_mask(Y: torch.Tensor, base_mask: torch.Tensor) -> torch.Tensor:
     """
     Prosiruje base_mask (padding + dijagonala, iz make_loss_mask) tako da
