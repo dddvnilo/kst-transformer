@@ -97,6 +97,12 @@ def metrics_lenient(pred_adj: np.ndarray, true_adj: np.ndarray, n_items: int):
       TP: predvidjeno i validno (u tranzitivnom zatvorenju Y)
       FP: predvidjeno ali ne moze se izvesti iz Y
       FN: nije predvidjeno a jeste direktna veza u Y (Hasse)
+      TN: nije predvidjeno i ne moze se izvesti iz Y
+
+    Nepredvidjena tranzitivna veza ne upada ni u jednu od cetiri kategorije -
+    lenient rezim je po definiciji ne posmatra. Zato Hamming deli iskljucivo
+    brojem ocenjenih celija (TP + TN + FP + FN), a ne brojem svih celija van
+    dijagonale: obe mere tako gledaju isti skup celija.
     """
     true_closed = transitive_closure_matrix(true_adj[:n_items, :n_items])
 
@@ -108,7 +114,9 @@ def metrics_lenient(pred_adj: np.ndarray, true_adj: np.ndarray, n_items: int):
     tp = ( pred_flat &  true_closed_flat).sum()
     fp = ( pred_flat & ~true_closed_flat).sum()
     fn = (~pred_flat &  true_flat).sum()
+    tn = (~pred_flat & ~true_closed_flat).sum()
 
+    scored  = tp + tn + fp + fn
     f1      = (2 * tp) / (2 * tp + fp + fn) if (tp + fp + fn) > 0 else 1.0
-    hamming = (fp + fn) / len(pred_flat) if len(pred_flat) > 0 else 0.0
+    hamming = (fp + fn) / scored if scored > 0 else 0.0
     return float(f1), float(hamming)

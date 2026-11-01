@@ -31,3 +31,5 @@ mlflow.db
 # OS files
 .DS_Store
 Thumbs.db
+# Licne beleske
+notes.md

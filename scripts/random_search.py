@@ -15,7 +15,7 @@ import torch
 import torch.nn.functional as F
 
 from kst.model import KSTTransformer
-from kst.dataset import make_dataloaders, make_loss_mask, make_lenient_loss_mask
+from kst.dataset import make_dataloaders, make_loss_mask, make_lenient_loss_mask, make_closure_target
 from util.metrics import compute_pos_weight
 from util.paths import DATA_DIR, CHECKPOINT_DIR, resolve_path
 
@@ -24,23 +24,39 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Random search za hiperparametre")
     parser.add_argument("--data",        type=str,   default="kst_dataset_2-10items_80k_weighted.npz",
                         help="Ime fajla u data/ ili puna putanja")
-    parser.add_argument("--trials",      type=int,   default=30,  help="Broj nasumicnih kombinacija (default: 20)")
+    parser.add_argument("--trials",      type=int,   default=60,  help="Broj nasumicnih kombinacija (default: 60)")
     parser.add_argument("--epochs",      type=int,   default=30,  help="Epohe po kombinaciji (default: 30)")
     parser.add_argument("--patience",    type=int,   default=10,  help="Early stopping patience (default: 10)")
     parser.add_argument("--val-ratio",   type=float, default=0.2)
     parser.add_argument("--test-ratio",  type=float, default=0.1)
     parser.add_argument("--seed",        type=int,   default=42)
-    parser.add_argument("--output",      type=str,   default="random_search_10items_lenient.csv",
-                        help="Ime fajla u checkpoints/ ili puna putanja")
-    parser.add_argument("--history",     type=str,   default="random_search_history_lenient.csv",
-                        help="Ime fajla u checkpoints/ ili puna putanja - koristi se da se izbegnu ponovljene "
-                             "kombinacije")
+    parser.add_argument("--output",      type=str,   default=None,
+                        help="Ime fajla u checkpoints/random_search/ ili puna putanja "
+                             "(podrazumevano se izvodi iz rezima: random_search_10items[_lenient|_closure].csv)")
+    parser.add_argument("--history",     type=str,   default=None,
+                        help="Ime fajla u checkpoints/random_search/ ili puna putanja - koristi se da se izbegnu ponovljene "
+                             "kombinacije (podrazumevano se izvodi iz rezima)")
     parser.add_argument("--lenient-loss", action="store_true", default=False,
                         help="Ne kaznjava u loss-u tranzitivno validne, ali nedirektne predikcije")
+    parser.add_argument("--closure-loss", action="store_true", default=False,
+                        help="Target je puno tranzitivno zatvorenje Y (model uci ceo skup implikacija)")
     args = parser.parse_args()
+    if args.lenient_loss and args.closure_loss:
+        parser.error("--lenient-loss i --closure-loss se medjusobno iskljucuju: lenient izbacuje "
+                     "tranzitivne celije iz loss-a, a closure ih trazi kao pozitivne primere.")
+
+    # Rezimi se ne smeju mesati u istom CSV-u: val_loss nije uporediv izmedju njih
+    # (razlicit target, razlicita maska, razlicit pos_weight), a --history sluzi za
+    # dedup unutar jednog rezima. Zato podrazumevana imena prate rezim.
+    suffix = "_lenient" if args.lenient_loss else "_closure" if args.closure_loss else ""
+    if args.output is None:
+        args.output = f"random_search_10items{suffix}.csv"
+    if args.history is None:
+        args.history = f"random_search_history{suffix}.csv"
+
     args.data = str(resolve_path(args.data, DATA_DIR))
-    args.output = str(resolve_path(args.output, CHECKPOINT_DIR))
-    args.history = str(resolve_path(args.history, CHECKPOINT_DIR))
+    args.output = str(resolve_path(args.output, CHECKPOINT_DIR / "random_search"))
+    args.history = str(resolve_path(args.history, CHECKPOINT_DIR / "random_search"))
     return args
 
 
@@ -96,7 +112,7 @@ def sample_hparams(rng: random.Random, exclude: set = frozenset(), max_attempts:
 # Pomocne funkcije
 # ---------------------------------------------------------------------------
 
-def run_epoch(model, loader, optimizer, device, max_items, pos_weight, train: bool, lenient: bool = False):
+def run_epoch(model, loader, optimizer, device, max_items, pos_weight, train: bool, lenient: bool = False, closure: bool = False):
     model.train(train)
     total_loss = 0.0
 
@@ -104,10 +120,12 @@ def run_epoch(model, loader, optimizer, device, max_items, pos_weight, train: bo
         for X, Y, item_counts in loader:
             X, Y, item_counts = X.to(device), Y.to(device), item_counts.to(device)
             pred = model(X, item_counts)
+            # closure rezim: target je puno tranzitivno zatvorenje umesto Hasse dijagrama
+            target = make_closure_target(Y) if closure else Y
             mask = make_loss_mask(item_counts, max_items)
             if lenient:
                 mask = make_lenient_loss_mask(Y, mask)
-            loss = F.binary_cross_entropy_with_logits(pred[mask], Y[mask], pos_weight=pos_weight)
+            loss = F.binary_cross_entropy_with_logits(pred[mask], target[mask], pos_weight=pos_weight)
 
             if train:
                 optimizer.zero_grad()
@@ -119,7 +137,7 @@ def run_epoch(model, loader, optimizer, device, max_items, pos_weight, train: bo
     return total_loss / len(loader)
 
 
-def train_trial(hparams, train_loader, val_loader, students, max_items, device, epochs, patience, lenient: bool = False):
+def train_trial(hparams, train_loader, val_loader, students, max_items, device, epochs, patience, lenient: bool = False, closure: bool = False):
     model = KSTTransformer(
         max_items=max_items,
         students=students,
@@ -131,15 +149,15 @@ def train_trial(hparams, train_loader, val_loader, students, max_items, device, 
     ).to(device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=hparams["lr"])
-    pw = compute_pos_weight(train_loader, max_items, lenient=lenient)
+    pw = compute_pos_weight(train_loader, max_items, lenient=lenient, closure=closure)
     pos_weight = torch.tensor([pw], device=device)
 
     best_val_loss = float("inf")
     epochs_no_improve = 0
 
     for epoch in range(1, epochs + 1):
-        run_epoch(model, train_loader, optimizer, device, max_items, pos_weight, train=True, lenient=lenient)
-        val_loss = run_epoch(model, val_loader, optimizer, device, max_items, pos_weight, train=False, lenient=lenient)
+        run_epoch(model, train_loader, optimizer, device, max_items, pos_weight, train=True, lenient=lenient, closure=closure)
+        val_loss = run_epoch(model, val_loader, optimizer, device, max_items, pos_weight, train=False, lenient=lenient, closure=closure)
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
@@ -194,7 +212,9 @@ def append_history(history_path: str, hparams: dict) -> None:
 def main():
     args = parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Device: {device}")
+    regime = "closure" if args.closure_loss else ("lenient" if args.lenient_loss else "strict")
+    print(f"Device: {device}  |  Rezim: {regime}")
+    print(f"Rezultati: {args.output}")
     print(f"Trials: {args.trials}  |  Max epoha po trialu: {args.epochs}  |  Patience: {args.patience}\n")
 
     base_loader_args = dict(
@@ -230,6 +250,7 @@ def main():
             students, max_items, device,
             epochs=args.epochs, patience=args.patience,
             lenient=args.lenient_loss,
+            closure=args.closure_loss,
         )
 
         print(f"-> val_loss={best_val_loss:.4f}  (epoha {stopped_epoch})")

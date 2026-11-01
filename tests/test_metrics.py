@@ -120,7 +120,9 @@ def test_metrics_lenient_fn_only_counts_direct_hasse_edges():
 
     # tp=0, fp=0, fn=2 (samo direktne (0,1) i (1,2)) -> f1 = 0
     assert f1 == 0.0
-    assert hamming == 2 / 6
+    # nepredvidjena tranzitivna (0,2) nije ni FN ni TN, pa ne ulazi ni u imenilac:
+    # ocenjeno je 5 od 6 celija van dijagonale
+    assert hamming == 2 / 5
 
 
 def test_metrics_closure_penalizes_missed_transitive_edges():

@@ -21,26 +21,31 @@ def parse_args():
     parser.add_argument("--data",            type=str,   default="kst_dataset_2-10items_80k_weighted.npz",
                         help="Ime fajla u data/ ili puna putanja")
     parser.add_argument("--epochs",          type=int,   default=200)
-    parser.add_argument("--batch-size",      type=int,   default=32)
-    parser.add_argument("--lr",              type=float, default=0.000506)
+    parser.add_argument("--batch-size",      type=int,   default=128)
+    parser.add_argument("--lr",              type=float, default=0.000662)
     parser.add_argument("--d-model",         type=int,   default=256)
-    parser.add_argument("--nhead",           type=int,   default=4)
-    parser.add_argument("--num-layers",      type=int,   default=2)
+    parser.add_argument("--nhead",           type=int,   default=8)
+    parser.add_argument("--num-layers",      type=int,   default=3)
     parser.add_argument("--dim-feedforward", type=int,   default=256)
-    parser.add_argument("--dropout",         type=float, default=0.2)
+    parser.add_argument("--dropout",         type=float, default=0.1)
     parser.add_argument("--val-ratio",       type=float, default=0.2)
     parser.add_argument("--test-ratio",      type=float, default=0.1)
     parser.add_argument("--seed",            type=int,   default=42)
     parser.add_argument("--checkpoint-dir",  type=str,   default=str(CHECKPOINT_DIR))
     parser.add_argument("--patience",        type=int,   default=200)
+    parser.add_argument("--strict-loss",     action="store_true", default=False,
+                        help="Izricit strogi rezim: target je Y (Hasse), maska je bazna. "
+                             "Podrazumevano ponasanje - zastavica postoji radi simetrije i "
+                             "da bi rezim bio izricito zabelezen u MLflow-u.")
     parser.add_argument("--lenient-loss",    action="store_true", default=False,
                         help="Ne kaznjava u loss-u tranzitivno validne, ali nedirektne predikcije")
     parser.add_argument("--closure-loss",    action="store_true", default=False,
                         help="Target je puno tranzitivno zatvorenje Y (model uci ceo skup implikacija)")
     args = parser.parse_args()
-    if args.lenient_loss and args.closure_loss:
-        parser.error("--lenient-loss i --closure-loss se medjusobno iskljucuju: lenient izbacuje "
-                     "tranzitivne celije iz loss-a, closure ih trazi kao pozitivne primere.")
+    if sum([args.strict_loss, args.lenient_loss, args.closure_loss]) > 1:
+        parser.error("--strict-loss, --lenient-loss i --closure-loss se medjusobno iskljucuju: "
+                     "strict trazi Hasse dijagram, lenient izbacuje tranzitivne celije iz loss-a, "
+                     "a closure ih trazi kao pozitivne primere.")
     args.data = str(resolve_path(args.data, DATA_DIR))
     return args
 

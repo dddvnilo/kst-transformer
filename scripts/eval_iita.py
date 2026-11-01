@@ -27,6 +27,7 @@ Primer pokretanja:
 """
 
 import argparse
+import csv
 import os
 import time
 from collections import defaultdict
@@ -69,13 +70,17 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Evaluacija IITA vs KST Transformer")
     parser.add_argument("--data",        type=str,   default="kst_dataset_2-10items_80k_weighted.npz",
                         help="Ime fajla u data/ ili puna putanja")
-    parser.add_argument("--checkpoint",  type=str,   default="best_closure.pt",
+    parser.add_argument("--checkpoint",  type=str,   default=str(CHECKPOINT_DIR / "10items_strict" / "best_10items_80k_weighted_200epochs.pt"),
                         help="Ime fajla u checkpoints/ ili puna putanja")
     parser.add_argument("--num-samples", type=int,   default=200,  help="Broj uzoraka iz test skupa")
     parser.add_argument("--val-ratio",   type=float, default=0.2)
     parser.add_argument("--test-ratio",  type=float, default=0.1)
     parser.add_argument("--seed",        type=int,   default=42)
     parser.add_argument("--batch-size",  type=int,   default=64)
+    parser.add_argument("--device",      type=str,   default="cpu", choices=["cpu", "cuda", "auto"],
+                        help="Uredjaj na kom radi transformer. Default 'cpu', jer IITA radi na "
+                             "procesoru pa je samo tako poredjenje vremena validno; 'auto' bira "
+                             "grafičku ako je dostupna")
     parser.add_argument("--output-dir",  type=str,   default=str(CHECKPOINT_DIR / "eval plots"),
                         help="Direktorijum u koji se cuvaju plotovi (default: checkpoints/eval plots/)")
     args = parser.parse_args()
@@ -187,6 +192,24 @@ def aggregate_by_items(records, f1_idx: int, ham_idx: int):
     return f1_by_n, hamming_by_n
 
 
+def print_overall_table(rows, label):
+    """rows: lista (metod, f1, hamming, vreme_s) - ista tabela koja ide u _overall.png."""
+    print(f"\n  {label}")
+    print(f"  {'Metod':<18} {'F1':>7} {'Hamming':>9} {'Vreme (s)':>10}")
+    print(f"  {'-' * 46}")
+    for name, f1, hamming, elapsed in rows:
+        print(f"  {name:<18} {f1:>7.3f} {hamming:>9.3f} {elapsed:>10.1f}")
+
+
+def save_summary_csv(save_path, summary_rows):
+    """summary_rows: lista (mod, metod, f1, hamming, vreme_s) preko svih modova."""
+    with open(save_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["mod", "metod", "f1", "hamming", "vreme_s"])
+        for mode, method, f1, hamming, elapsed in summary_rows:
+            writer.writerow([mode, method, f"{f1:.4f}", f"{hamming:.4f}", f"{elapsed:.1f}"])
+
+
 def plot_overall_table(rows, title, save_path):
     """rows: lista (metod, f1, hamming, vreme_s)."""
     fig, ax = plt.subplots(figsize=(9.5, 0.7 * len(rows) + 1.4))
@@ -256,7 +279,10 @@ def plot_metric_by_items(data_by_method, metric_label, title, save_path):
 
 def main():
     args   = parse_args()
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if args.device == "auto":
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    else:
+        device = torch.device(args.device)
 
     _, _, test_loader = make_dataloaders(
         args.data,
@@ -324,6 +350,8 @@ def main():
     os.makedirs(args.output_dir, exist_ok=True)
     stem = os.path.splitext(os.path.basename(args.checkpoint))[0]
 
+    summary_rows = []
+
     for tag, label, f1_idx, ham_idx in MODES:
         overall_rows  = []
         f1_by_method  = {}
@@ -332,6 +360,7 @@ def main():
         for method, (records, elapsed) in method_records.items():
             f1, hamming = aggregate_overall(records, f1_idx, ham_idx)
             overall_rows.append((method, f1, hamming, elapsed))
+            summary_rows.append((tag, method, f1, hamming, elapsed))
 
             f1_by_n, ham_by_n = aggregate_by_items(records, f1_idx, ham_idx)
             f1_by_method[method]  = f1_by_n
@@ -352,7 +381,12 @@ def main():
             f"Hamming loss po broju pitanja - {label}",
             os.path.join(args.output_dir, f"iita_comparison_{stem}_{tag}_hamming_by_items.png"),
         )
-        print(f"Sacuvano: iita_comparison_{stem}_{tag}_{{overall,f1_by_items,hamming_by_items}}.png")
+        print_overall_table(overall_rows, label)
+        print(f"  Sacuvano: iita_comparison_{stem}_{tag}_{{overall,f1_by_items,hamming_by_items}}.png")
+
+    summary_path = os.path.join(args.output_dir, f"iita_comparison_{stem}_summary.csv")
+    save_summary_csv(summary_path, summary_rows)
+    print(f"\nSve vrednosti: {summary_path}")
 
     print(f"\nCheckpoint: epoha {checkpoint.get('epoch', '?')} | "
           f"val_loss={checkpoint.get('val_loss', 0):.4f} | "

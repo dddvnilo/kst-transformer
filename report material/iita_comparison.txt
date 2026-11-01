@@ -1,0 +1,121 @@
+closure:
+
+  Strict (ground truth = Hasse dijagram)
+  Metod                   F1   Hamming  Vreme (s)
+  ----------------------------------------------
+  IITA (v=1)           0.831     0.042      193.2
+  IITA (v=2)           0.827     0.044      176.7
+  IITA (v=3)           0.623     0.088      162.8
+  KST Transformer      0.666     0.179        3.5
+  Sacuvano: iita_comparison_best_10items_80k_weighted_200epochs_closure_strict_{overall,f1_by_items,hamming_by_items}.png
+
+  Lenient (tranzitivne veze se ne kaznjavaju)
+  Metod                   F1   Hamming  Vreme (s)
+  ----------------------------------------------
+  IITA (v=1)           0.911     0.032      193.2
+  IITA (v=2)           0.909     0.033      176.7
+  IITA (v=3)           0.753     0.125      162.8
+  KST Transformer      0.972     0.013        3.5
+  Sacuvano: iita_comparison_best_10items_80k_weighted_200epochs_closure_lenient_{overall,f1_by_items,hamming_by_items}.png
+
+  Full transitive closure (puno zatvorenje se kaznjava)
+  Metod                   F1   Hamming  Vreme (s)
+  ----------------------------------------------
+  IITA (v=1)           0.911     0.032      193.2
+  IITA (v=2)           0.908     0.033      176.7
+  IITA (v=3)           0.734     0.144      162.8
+  KST Transformer      0.971     0.013        3.5
+  Sacuvano: iita_comparison_best_10items_80k_weighted_200epochs_closure_closure_{overall,f1_by_items,hamming_by_items}.png
+
+  Full transitive closure 2 (izlaz modela zatvoren)
+  Metod                   F1   Hamming  Vreme (s)
+  ----------------------------------------------
+  IITA (v=1)           0.911     0.032      193.2
+  IITA (v=2)           0.908     0.033      176.7
+  IITA (v=3)           0.734     0.144      162.8
+  KST Transformer      0.971     0.013        3.5
+  Sacuvano: iita_comparison_best_10items_80k_weighted_200epochs_closure_closure2_{overall,f1_by_items,hamming_by_items}.png
+
+Sve vrednosti: D:\skola\diplomski\kst-transformer\checkpoints\eval plots\iita_comparison_best_10items_80k_weighted_200epochs_closure_summary.csv
+
+Checkpoint: epoha 62 | val_loss=0.0625 | val_F1=0.973
+
+lenient:
+
+  Strict (ground truth = Hasse dijagram)
+  Metod                   F1   Hamming  Vreme (s)
+  ----------------------------------------------
+  IITA (v=1)           0.831     0.042      198.6
+  IITA (v=2)           0.827     0.044      183.1
+  IITA (v=3)           0.623     0.088      166.1
+  KST Transformer      0.651     0.188        3.5
+  Sacuvano: iita_comparison_best_10items_80k_weighted_200epochs_lenient_strict_{overall,f1_by_items,hamming_by_items}.png
+
+  Lenient (tranzitivne veze se ne kaznjavaju)
+  Metod                   F1   Hamming  Vreme (s)
+  ----------------------------------------------
+  IITA (v=1)           0.911     0.032      198.6
+  IITA (v=2)           0.909     0.033      183.1
+  IITA (v=3)           0.753     0.125      166.1
+  KST Transformer      0.952     0.022        3.5
+  Sacuvano: iita_comparison_best_10items_80k_weighted_200epochs_lenient_lenient_{overall,f1_by_items,hamming_by_items}.png
+
+  Full transitive closure (puno zatvorenje se kaznjava)
+  Metod                   F1   Hamming  Vreme (s)
+  ----------------------------------------------
+  IITA (v=1)           0.911     0.032      198.6
+  IITA (v=2)           0.908     0.033      183.1
+  IITA (v=3)           0.734     0.144      166.1
+  KST Transformer      0.951     0.022        3.5
+  Sacuvano: iita_comparison_best_10items_80k_weighted_200epochs_lenient_closure_{overall,f1_by_items,hamming_by_items}.png
+
+  Full transitive closure 2 (izlaz modela zatvoren)
+  Metod                   F1   Hamming  Vreme (s)
+  ----------------------------------------------
+  IITA (v=1)           0.911     0.032      198.6
+  IITA (v=2)           0.908     0.033      183.1
+  IITA (v=3)           0.734     0.144      166.1
+  KST Transformer      0.952     0.022        3.5
+  Sacuvano: iita_comparison_best_10items_80k_weighted_200epochs_lenient_closure2_{overall,f1_by_items,hamming_by_items}.png
+
+Sve vrednosti: D:\skola\diplomski\kst-transformer\checkpoints\eval plots\iita_comparison_best_10items_80k_weighted_200epochs_lenient_summary.csv
+
+strict:
+
+  Strict (ground truth = Hasse dijagram)
+  Metod                   F1   Hamming  Vreme (s)
+  ----------------------------------------------
+  IITA (v=1)           0.831     0.042      195.2
+  IITA (v=2)           0.827     0.044      178.9
+  IITA (v=3)           0.623     0.088      165.0
+  KST Transformer      0.874     0.041        2.4
+  Sacuvano: iita_comparison_best_10items_80k_weighted_200epochs_strict_{overall,f1_by_items,hamming_by_items}.png
+
+  Lenient (tranzitivne veze se ne kaznjavaju)
+  Metod                   F1   Hamming  Vreme (s)
+  ----------------------------------------------
+  IITA (v=1)           0.911     0.032      195.2
+  IITA (v=2)           0.909     0.033      178.9
+  IITA (v=3)           0.753     0.125      165.0
+  KST Transformer      0.923     0.029        2.4
+  Sacuvano: iita_comparison_best_10items_80k_weighted_200epochs_lenient_{overall,f1_by_items,hamming_by_items}.png
+
+  Full transitive closure (puno zatvorenje se kaznjava)
+  Metod                   F1   Hamming  Vreme (s)
+  ----------------------------------------------
+  IITA (v=1)           0.911     0.032      195.2
+  IITA (v=2)           0.908     0.033      178.9
+  IITA (v=3)           0.734     0.144      165.0
+  KST Transformer      0.683     0.177        2.4
+  Sacuvano: iita_comparison_best_10items_80k_weighted_200epochs_closure_{overall,f1_by_items,hamming_by_items}.png
+
+  Full transitive closure 2 (izlaz modela zatvoren)
+  Metod                   F1   Hamming  Vreme (s)
+  ----------------------------------------------
+  IITA (v=1)           0.911     0.032      195.2
+  IITA (v=2)           0.908     0.033      178.9
+  IITA (v=3)           0.734     0.144      165.0
+  KST Transformer      0.950     0.024        2.4
+  Sacuvano: iita_comparison_best_10items_80k_weighted_200epochs_closure2_{overall,f1_by_items,hamming_by_items}.png
+
+Sve vrednosti: D:\skola\diplomski\kst-transformer\checkpoints\eval plots\iita_comparison_best_10items_80k_weighted_200epochs_summary.csv
