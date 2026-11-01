@@ -70,7 +70,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Evaluacija IITA vs KST Transformer")
     parser.add_argument("--data",        type=str,   default="kst_dataset_2-10items_80k_weighted.npz",
                         help="Ime fajla u data/ ili puna putanja")
-    parser.add_argument("--checkpoint",  type=str,   default=str(CHECKPOINT_DIR / "10items_strict" / "best_10items_80k_weighted_200epochs.pt"),
+    parser.add_argument("--checkpoint",  type=str,   default=str(CHECKPOINT_DIR / "best.pt"),
                         help="Ime fajla u checkpoints/ ili puna putanja")
     parser.add_argument("--num-samples", type=int,   default=200,  help="Broj uzoraka iz test skupa")
     parser.add_argument("--val-ratio",   type=float, default=0.2)
@@ -338,6 +338,8 @@ def main():
         num_encoder_layers=saved_args.get("num_layers"),
         dim_feedforward=saved_args.get("dim_feedforward"),
         dropout=saved_args.get("dropout", 0.0),
+        # checkpointi sa diplomskog nemaju ovaj kljuc - svi su imali nauceno poziciono kodiranje
+        pos_encoding=saved_args.get("pos_encoding", "learned"),
     ).to(device)
     model.load_state_dict(checkpoint["model_state"])
 

@@ -1,0 +1,22 @@
+# Model zatvorenja sa diplomskog (checkpoints/10items_closure/), sa naucenim pozicionim kodiranjem.
+# Vrednosti su prepisane iz `args` sacuvanih u checkpointu.
+# Pokretanje: python scripts/train.py --config configs/closure_thesis.toml
+
+data = "kst_dataset_2-10items_80k_weighted.npz"
+closure_loss = true
+pos_encoding = "learned"
+
+epochs = 200
+patience = 200
+batch_size = 128
+lr = 0.000662
+
+d_model = 256
+nhead = 8
+num_layers = 3
+dim_feedforward = 256
+dropout = 0.1
+
+val_ratio = 0.2
+test_ratio = 0.1
+seed = 42

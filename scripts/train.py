@@ -10,10 +10,11 @@ import torch
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
 
-from kst.model import KSTTransformer
+from kst.model import KSTTransformer, POS_ENCODINGS
 from kst.dataset import make_dataloaders, make_loss_mask, make_lenient_loss_mask, make_closure_target
 from util.metrics import compute_pos_weight, compute_f1, compute_hamming
 from util.paths import ROOT_DIR, DATA_DIR, CHECKPOINT_DIR, resolve_path
+from util.config import parse_args_with_config
 
 
 def parse_args():
@@ -28,6 +29,9 @@ def parse_args():
     parser.add_argument("--num-layers",      type=int,   default=3)
     parser.add_argument("--dim-feedforward", type=int,   default=256)
     parser.add_argument("--dropout",         type=float, default=0.1)
+    parser.add_argument("--pos-encoding",    type=str,   default="none", choices=POS_ENCODINGS,
+                        help="Vrsta pozicionog kodiranja. 'none' (default): model je permutaciono "
+                             "ekvivarijantan po pitanjima; 'learned': nauceno, kao modeli sa diplomskog")
     parser.add_argument("--val-ratio",       type=float, default=0.2)
     parser.add_argument("--test-ratio",      type=float, default=0.1)
     parser.add_argument("--seed",            type=int,   default=42)
@@ -41,7 +45,7 @@ def parse_args():
                         help="Ne kaznjava u loss-u tranzitivno validne, ali nedirektne predikcije")
     parser.add_argument("--closure-loss",    action="store_true", default=False,
                         help="Target je puno tranzitivno zatvorenje Y (model uci ceo skup implikacija)")
-    args = parser.parse_args()
+    args = parse_args_with_config(parser)
     if sum([args.strict_loss, args.lenient_loss, args.closure_loss]) > 1:
         parser.error("--strict-loss, --lenient-loss i --closure-loss se medjusobno iskljucuju: "
                      "strict trazi Hasse dijagram, lenient izbacuje tranzitivne celije iz loss-a, "
@@ -160,6 +164,7 @@ def main():
             num_encoder_layers=args.num_layers,
             dim_feedforward=args.dim_feedforward,
             dropout=args.dropout,
+            pos_encoding=args.pos_encoding,
         ).to(device)
 
         optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)

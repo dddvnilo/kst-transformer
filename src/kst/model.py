@@ -2,6 +2,11 @@ import torch
 import torch.nn as nn
 
 
+# Podrzane vrste pozicionog kodiranja. Nova vrsta (npr. sinusno) se dodaje ovde i u
+# odgovarajuce grane u __init__ i forward.
+POS_ENCODINGS = ("learned", "none")
+
+
 class KSTTransformer(nn.Module):
     """
     Input:  (batch, students, items)  - binarna response matrica
@@ -17,20 +22,27 @@ class KSTTransformer(nn.Module):
         num_encoder_layers: int = 3,
         dim_feedforward: int = 256,
         dropout: float = 0.1,
+        pos_encoding: str = "learned",
     ):
         """
-        :param max_items:          maksimalan broj pitanja (= veličina adj matrice)
+        :param max_items:          maksimalan broj pitanja (= veličina adj matrice); ogranicava
+                                   ulaz samo uz pos_encoding="learned"
         :param students:           broj studenata (= dimenzija sirovog input tokena)
         :param d_model:            dimenzija internog prostora transformera
         :param nhead:              broj attention glava
         :param num_encoder_layers: broj encoder slojeva
         :param dim_feedforward:    dimenzija feedforward sloja unutar encodera
         :param dropout:            dropout stopa
+        :param pos_encoding:       vrsta pozicionog kodiranja, jedna od POS_ENCODINGS
         """
         super().__init__()
 
+        if pos_encoding not in POS_ENCODINGS:
+            raise ValueError(f"pos_encoding mora biti jedno od {POS_ENCODINGS}, dobijeno: {pos_encoding!r}")
+
         self.max_items = max_items
         self.d_model = d_model
+        self.pos_encoding = pos_encoding
 
         # ------------------------------------------------------------------
         # 1. Projection: (students,) -> (d_model,)
@@ -41,9 +53,13 @@ class KSTTransformer(nn.Module):
 
         # ------------------------------------------------------------------
         # 2. Positional Encoding
-        #    Naucen jer redosled pitanja nije prirodan poredak kao u jeziku za NLP.
+        #    "learned": naucen embedding po poziciji - ogranicava broj pitanja na max_items.
+        #    "none":    bez pozicione informacije. Redosled pitanja u testu ne nosi informaciju
+        #               (ni IITA ga ne koristi), pa je model tada permutaciono ekvivarijantan po
+        #               pitanjima i prima proizvoljan broj pitanja.
         # ------------------------------------------------------------------
-        self.positional_encoding = nn.Embedding(max_items, d_model)
+        if pos_encoding == "learned":
+            self.positional_encoding = nn.Embedding(max_items, d_model)
 
         # ------------------------------------------------------------------
         # 3. Transformer Encoder
@@ -89,8 +105,9 @@ class KSTTransformer(nn.Module):
         x = self.input_projection(x)
 
         # Positional encoding: dodaj pozicijsku informaciju za svaki token
-        positions = torch.arange(items, device=x.device)          # (items,)
-        x = x + self.positional_encoding(positions)                # broadcast po batchu
+        if self.pos_encoding == "learned":
+            positions = torch.arange(items, device=x.device)          # (items,)
+            x = x + self.positional_encoding(positions)                # broadcast po batchu
 
         # Padding maska za attention: True = ignorisi ovu poziciju
         padding_mask = None

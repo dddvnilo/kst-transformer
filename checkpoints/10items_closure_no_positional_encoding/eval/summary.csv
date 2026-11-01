@@ -1,0 +1,17 @@
+mod,metod,f1,hamming,vreme_s
+strict,IITA (v=1),0.8313,0.0422,220.6
+strict,IITA (v=2),0.8266,0.0438,208.3
+strict,IITA (v=3),0.6234,0.0882,191.9
+strict,KST Transformer,0.6591,0.1826,3.7
+lenient,IITA (v=1),0.9110,0.0320,220.6
+lenient,IITA (v=2),0.9093,0.0326,208.3
+lenient,IITA (v=3),0.7533,0.1247,191.9
+lenient,KST Transformer,0.9649,0.0160,3.7
+closure,IITA (v=1),0.9106,0.0323,220.6
+closure,IITA (v=2),0.9084,0.0332,208.3
+closure,IITA (v=3),0.7335,0.1438,191.9
+closure,KST Transformer,0.9643,0.0163,3.7
+closure2,IITA (v=1),0.9106,0.0323,220.6
+closure2,IITA (v=2),0.9084,0.0332,208.3
+closure2,IITA (v=3),0.7335,0.1438,191.9
+closure2,KST Transformer,0.9644,0.0163,3.7

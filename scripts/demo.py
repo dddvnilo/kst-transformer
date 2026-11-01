@@ -5,6 +5,7 @@ import torch
 
 from learning_spaces.kst import simu, hasse
 from kst.model import KSTTransformer
+from util.generate_dataset_util import transitive_closure
 
 _SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 _ROOT_DIR    = os.path.join(_SCRIPTS_DIR, "..")
@@ -12,7 +13,7 @@ _ROOT_DIR    = os.path.join(_SCRIPTS_DIR, "..")
 
 def parse_args():
     parser = argparse.ArgumentParser(description="KST Transformer demo")
-    parser.add_argument("--checkpoint", type=str, default=os.path.join(_ROOT_DIR, "checkpoints", "10items_closure", "best_10items_80k_weighted_200epochs_closure.pt"))
+    parser.add_argument("--checkpoint", type=str, default=os.path.join(_ROOT_DIR, "checkpoints", "10items_closure_no_positional_encoding", "best_10items_80k_weighted_200epochs_closure_no_positional_encoding.pt"))
     parser.add_argument("--ce",         type=float, default=0.01,  help="Careless error stopa")
     parser.add_argument("--lg",         type=float, default=0.05, help="Lucky guess stopa")
     parser.add_argument("--threshold",  type=float, default=0.5,  help="Threshold za sigmoid")
@@ -27,11 +28,25 @@ def parse_args():
 # N_ITEMS = 5
 
 TRUE_IMP = [
-    (1,2),   # c ne moze bez b
-    (0, 3),   # d ne moze bez a
-    (2,3),   # d ne moze bez c
+    # zajednicko stablo 0 -> 1 -> ... -> 7
+    (0,1),
+    (1,2),
+    (2,3),
+    (3,4),
+    (4,5),
+    (5,6),
+    (6,7),
+    # grana 1: 7 -> 8 -> 9 -> 10
+    (7,8),
+    (8,9),
+    (9,10),
+    # grana 2: 7 -> 11 -> 12 -> 13 -> 14
+    (7,11),
+    (11,12),
+    (12,13),
+    (13,14),
 ]
-N_ITEMS = 4
+N_ITEMS = 15
 
 
 def load_model(checkpoint_path: str, device):
@@ -39,9 +54,14 @@ def load_model(checkpoint_path: str, device):
     saved_args = checkpoint.get("args", {})
     state      = checkpoint["model_state"]
 
-    # Ucitavamo dimenzije sa broj studenata i broj pitanja da bi simulirali unos bez hardkodovanih vrednosti
+    # checkpointi sa diplomskog nemaju ovaj kljuc - svi su imali nauceno poziciono kodiranje
+    pos_encoding = saved_args.get("pos_encoding", "learned")
+
+    # Ucitavamo dimenzije sa broj studenata i broj pitanja da bi simulirali unos bez hardkodovanih vrednosti.
+    # max_items je deo arhitekture samo uz nauceno poziciono kodiranje; bez njega model prima
+    # proizvoljan broj pitanja, pa ulaz ne treba paddovati.
     students  = state["input_projection.weight"].shape[1]
-    max_items = state["positional_encoding.weight"].shape[0]
+    max_items = state["positional_encoding.weight"].shape[0] if pos_encoding == "learned" else N_ITEMS
 
     model = KSTTransformer(
         max_items=max_items,
@@ -51,6 +71,7 @@ def load_model(checkpoint_path: str, device):
         num_encoder_layers=saved_args.get("num_layers"),
         dim_feedforward=saved_args.get("dim_feedforward"),
         dropout=0.0,
+        pos_encoding=pos_encoding,
     ).to(device)
     model.load_state_dict(state)
     model.eval()
@@ -80,14 +101,15 @@ def main():
     print(f"Prave implikacije: {sorted(TRUE_IMP)}")
     print(f"Simuliram odgovore ({students} studenata, {N_ITEMS} pitanja)...\n")
 
-    # Simulacija odgovora studenata
+    # Simulacija odgovora studenata - simu ocekuje kvazi-poredak (tranzitivno zatvorenu relaciju),
+    # kao i u generatoru dataseta
     sim = simu(
         items=N_ITEMS,
         size=students,
         ce=args.ce,
         lg=args.lg,
         delta=0.5,
-        imp=TRUE_IMP,
+        imp=transitive_closure(TRUE_IMP, N_ITEMS),
     )
 
     # Odgovori studenata iz simulacije
