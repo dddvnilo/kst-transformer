@@ -13,7 +13,10 @@ _ROOT_DIR    = os.path.join(_SCRIPTS_DIR, "..")
 
 def parse_args():
     parser = argparse.ArgumentParser(description="KST Transformer demo")
-    parser.add_argument("--checkpoint", type=str, default=os.path.join(_ROOT_DIR, "checkpoints", "10items_closure_no_positional_encoding", "best_10items_80k_weighted_200epochs_closure_no_positional_encoding.pt"))
+    parser.add_argument("--checkpoint", type=str, default=os.path.join(_ROOT_DIR, "checkpoints", "10items_closure_set_encoder", "best_10items_80k_weighted_200epochs_closure_set_encoder.pt"))
+    parser.add_argument("--students",   type=int,   default=500,
+                        help="Broj simuliranih studenata - samo za 'set' model; legacy 'linear' model "
+                             "ima broj studenata fiksiran arhitekturom")
     parser.add_argument("--ce",         type=float, default=0.01,  help="Careless error stopa")
     parser.add_argument("--lg",         type=float, default=0.05, help="Lucky guess stopa")
     parser.add_argument("--threshold",  type=float, default=0.5,  help="Threshold za sigmoid")
@@ -49,18 +52,23 @@ TRUE_IMP = [
 N_ITEMS = 15
 
 
-def load_model(checkpoint_path: str, device):
+def load_model(checkpoint_path: str, device, students: int):
     checkpoint = torch.load(checkpoint_path, map_location=device)
     saved_args = checkpoint.get("args", {})
     state      = checkpoint["model_state"]
 
-    # checkpointi sa diplomskog nemaju ovaj kljuc - svi su imali nauceno poziciono kodiranje
-    pos_encoding = saved_args.get("pos_encoding", "learned")
+    # checkpointi sa diplomskog nemaju ove kljuceve - svi su imali nauceno poziciono kodiranje
+    # i legacy linear ulazni enkoder
+    pos_encoding  = saved_args.get("pos_encoding", "learned")
+    input_encoder = saved_args.get("input_encoder", "linear")
 
     # Ucitavamo dimenzije sa broj studenata i broj pitanja da bi simulirali unos bez hardkodovanih vrednosti.
+    # Broj studenata je deo arhitekture samo kod legacy linear enkodera; "set" model prima
+    # proizvoljan broj studenata, pa se koristi prosledjeni.
     # max_items je deo arhitekture samo uz nauceno poziciono kodiranje; bez njega model prima
     # proizvoljan broj pitanja, pa ulaz ne treba paddovati.
-    students  = state["input_projection.weight"].shape[1]
+    if input_encoder == "linear":
+        students = state["input_projection.weight"].shape[1]
     max_items = state["positional_encoding.weight"].shape[0] if pos_encoding == "learned" else N_ITEMS
 
     model = KSTTransformer(
@@ -72,6 +80,7 @@ def load_model(checkpoint_path: str, device):
         dim_feedforward=saved_args.get("dim_feedforward"),
         dropout=0.0,
         pos_encoding=pos_encoding,
+        input_encoder=input_encoder,
     ).to(device)
     model.load_state_dict(state)
     model.eval()
@@ -83,7 +92,7 @@ def main():
     args   = parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    model, students, max_items, checkpoint = load_model(args.checkpoint, device)
+    model, students, max_items, checkpoint = load_model(args.checkpoint, device, args.students)
 
     assert N_ITEMS <= max_items, (
         f"N_ITEMS={N_ITEMS} je vece od max_items={max_items} na kojima je model treniran."
