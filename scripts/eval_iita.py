@@ -1,25 +1,19 @@
 """
 Evaluacija IITA vs KST Transformer na test skupu.
 
-Rezultati se cuvaju kao plotovi u checkpoints/eval plots/, za cetiri moda
-(strict / lenient / closure / closure2), po 3 plota:
-  - "_overall"       : tabela F1 / Hamming / Vreme za IITA (v=1,2,3) i transformer
-  - "_f1_by_items"    : F1 po broju pitanja u testu, za sve 4 metode
-  - "_hamming_by_items": Hamming po broju pitanja u testu, za sve 4 metode
+Obe metode se porede sa kvazi-poretkom - punim tranzitivnim zatvorenjem ground truth
+Hasse dijagrama. Izlaz IITA je kvazi-poredak, a transformer se trenira u rezimu zatvorenja
+(--closure-loss), pa se oba sirova izlaza porede bez ikakve transformacije; promasene
+tranzitivne veze se kaznjavaju kao FN.
 
-Modovi evaluacije:
-  - strict   : ground truth = Hasse (min. skup); IITA output se tranzitivno
-redukuje (transitive_reduction) pre poredjenja
-(obzirom da je transformer vec treniran na tranzitivno redukovanom skupu podataka)
+(Rezimi sa diplomskog - strict, lenient i obostrano zatvorenje - su izbaceni; vidi tag
+bachelor_thesis: git show bachelor_thesis:scripts/eval_iita.py)
 
-  - lenient  : tacne tranzitivne veze se ne kaznjavaju (metrics_lenient)
-
-  - closure  : ground truth = puno tranzitivno zatvorenje; sirov output se poredi
-takav kakav jeste, promasene tranzitivne veze SE kaznjavaju (FN)
-
-  - closure2 : kao closure, ali se IZLAZ TRANSFORMERA prvo tranzitivno zatvara
-(close-both); IITA izlaz se ne dira (vec je kvazi-poredak), pa je za IITA
-closure2 identican closure modu
+Rezultati se cuvaju u checkpoints/eval plots/:
+  - "_overall.png"          : tabela F1 / Hamming / Vreme za IITA (v=1,2,3) i transformer
+  - "_f1_by_items.png"      : F1 po broju pitanja u testu, za sve 4 metode
+  - "_hamming_by_items.png" : Hamming po broju pitanja u testu, za sve 4 metode
+  - "_summary.csv"          : sve vrednosti iz tabele
 
 Primer pokretanja:
   python eval_iita.py
@@ -39,8 +33,7 @@ import matplotlib.pyplot as plt
 from learning_spaces.kst.iita import iita
 from kst.dataset import make_dataloaders
 from kst.model import KSTTransformer
-from util.metrics import metrics_np, metrics_lenient, metrics_closure, metrics_closure_pred
-from util.generate_dataset_util import transitive_reduction
+from util.metrics import metrics_closure
 from util.paths import DATA_DIR, CHECKPOINT_DIR, resolve_path
 
 # Paleta po metodi
@@ -56,14 +49,7 @@ AXIS     = "#c3c2b7"
 INK      = "#0b0b0b"
 INK_2    = "#52514e"
 
-# Rezimi evaluacije: (tag za ime fajla, naslov, f1_idx, hamming_idx u record tuple-u)
-# record = (n, f1, hamming, f1_l, hamming_l, f1_c, hamming_c, f1_c2, hamming_c2)
-MODES = [
-    ("strict",   "Strict (ground truth = Hasse dijagram)",               1, 2),
-    ("lenient",  "Lenient (tranzitivne veze se ne kaznjavaju)",           3, 4),
-    ("closure",  "Full transitive closure (puno zatvorenje se kaznjava)", 5, 6),
-    ("closure2", "Full transitive closure 2 (izlaz modela zatvoren)",     7, 8),
-]
+LABEL = "kvazi-poredak (puno tranzitivno zatvorenje)"
 
 
 def parse_args():
@@ -90,9 +76,7 @@ def parse_args():
 
 
 def run_iita(X_np: np.ndarray, item_counts_np: np.ndarray, Y_np: np.ndarray, num_samples: int, v: int = 1):
-    """Pokrece IITA nad test uzorcima, vraca listu po-uzorak rezultata:
-    (n, f1, hamming, f1_l, hamming_l, f1_c, hamming_c, f1_c2, hamming_c2)
-    - strict, lenient, closure, closure2 (za IITA je closure2 == closure)."""
+    """Pokrece IITA nad test uzorcima, vraca listu po-uzorak rezultata (n, f1, hamming)."""
     records = []
     skipped = 0
 
@@ -108,23 +92,13 @@ def run_iita(X_np: np.ndarray, item_counts_np: np.ndarray, Y_np: np.ndarray, num
             skipped += 1
             continue
 
-        # Strict: IITA output se tranzitivno redukuje (Hasse dijagram, uporedivo sa Y)
-        pred_adj_reduced = np.zeros((n, n), dtype=np.float32)
-        for (a, b) in transitive_reduction(impl):
-            pred_adj_reduced[a][b] = 1.0
-
-        # Lenient: sirov IITA output (tranzitivne veze se ionako ne kaznjavaju)
-        pred_adj_raw = np.zeros((n, n), dtype=np.float32)
+        # Sirov IITA output - vec je kvazi-poredak (tranzitivno zatvoren)
+        pred_adj = np.zeros((n, n), dtype=np.float32)
         for (a, b) in impl:
-            pred_adj_raw[a][b] = 1.0
+            pred_adj[a][b] = 1.0
 
-        f1, hamming     = metrics_np(pred_adj_reduced, y_true, n)
-        f1_l, hamming_l = metrics_lenient(pred_adj_raw, y_true, n)
-        f1_c, hamming_c = metrics_closure(pred_adj_raw, y_true, n)
-        # closure2 zatvara SAMO izlaz transformera; IITA izlaz je vec kvazi-poredak
-        # (tranzitivno zatvoren), pa je za IITA closure2 identican closure modu
-        f1_c2, hamming_c2 = f1_c, hamming_c
-        records.append((n, f1, hamming, f1_l, hamming_l, f1_c, hamming_c, f1_c2, hamming_c2))
+        f1, hamming = metrics_closure(pred_adj, y_true, n)
+        records.append((n, f1, hamming))
 
         if (i + 1) % 50 == 0:
             print(f"  IITA v={v}: {i + 1}/{num_samples}")
@@ -137,9 +111,7 @@ def run_iita(X_np: np.ndarray, item_counts_np: np.ndarray, Y_np: np.ndarray, num
 
 def run_transformer(model, X: torch.Tensor, Y: torch.Tensor, item_counts: torch.Tensor,
                     device, batch_size: int):
-    """Pokrece transformer na svim uzorcima, vraca listu po-uzorak rezultata:
-    (n, f1, hamming, f1_l, hamming_l, f1_c, hamming_c, f1_c2, hamming_c2)
-    - strict, lenient, closure, closure2 (izlaz modela tranzitivno zatvoren)."""
+    """Pokrece transformer na svim uzorcima, vraca listu po-uzorak rezultata (n, f1, hamming)."""
     model.eval()
     all_pred, all_target, all_ic = [], [], []
 
@@ -166,48 +138,44 @@ def run_transformer(model, X: torch.Tensor, Y: torch.Tensor, item_counts: torch.
         # sigmoid(x) > 0.5  <=>  x > 0  (izbegava overflow u exp za velike negativne logite)
         pred_adj = (all_pred[i, :n, :n] > 0).astype(np.float32)
         true_adj = all_target[i, :n, :n]
-        f1, hamming       = metrics_np(pred_adj, true_adj, n)
-        f1_l, hamming_l   = metrics_lenient(pred_adj, true_adj, n)
-        f1_c, hamming_c   = metrics_closure(pred_adj, true_adj, n)
-        # closure2: izlaz modela se tranzitivno zatvara pre poredjenja (close-both)
-        f1_c2, hamming_c2 = metrics_closure_pred(pred_adj, true_adj, n)
-        records.append((n, f1, hamming, f1_l, hamming_l, f1_c, hamming_c, f1_c2, hamming_c2))
+        f1, hamming = metrics_closure(pred_adj, true_adj, n)
+        records.append((n, f1, hamming))
 
     return records
 
 
-def aggregate_overall(records, f1_idx: int, ham_idx: int):
-    """records -> (mean_f1, mean_hamming) za dati rezim (indeksi kolona)."""
+def aggregate_overall(records):
+    """records -> (mean_f1, mean_hamming)."""
     arr = np.array(records)
-    return float(arr[:, f1_idx].mean()), float(arr[:, ham_idx].mean())
+    return float(arr[:, 1].mean()), float(arr[:, 2].mean())
 
 
-def aggregate_by_items(records, f1_idx: int, ham_idx: int):
-    """records -> (f1_by_n, hamming_by_n) dict-ovi za dati rezim (indeksi kolona)."""
+def aggregate_by_items(records):
+    """records -> (f1_by_n, hamming_by_n) dict-ovi."""
     by_n = defaultdict(list)
-    for rec in records:
-        by_n[rec[0]].append((rec[f1_idx], rec[ham_idx]))
+    for n, f1, hamming in records:
+        by_n[n].append((f1, hamming))
     f1_by_n      = {n: float(np.mean([v[0] for v in vals])) for n, vals in by_n.items()}
     hamming_by_n = {n: float(np.mean([v[1] for v in vals])) for n, vals in by_n.items()}
     return f1_by_n, hamming_by_n
 
 
-def print_overall_table(rows, label):
+def print_overall_table(rows):
     """rows: lista (metod, f1, hamming, vreme_s) - ista tabela koja ide u _overall.png."""
-    print(f"\n  {label}")
+    print(f"\n  {LABEL}")
     print(f"  {'Metod':<18} {'F1':>7} {'Hamming':>9} {'Vreme (s)':>10}")
     print(f"  {'-' * 46}")
     for name, f1, hamming, elapsed in rows:
         print(f"  {name:<18} {f1:>7.3f} {hamming:>9.3f} {elapsed:>10.1f}")
 
 
-def save_summary_csv(save_path, summary_rows):
-    """summary_rows: lista (mod, metod, f1, hamming, vreme_s) preko svih modova."""
+def save_summary_csv(save_path, rows):
+    """rows: lista (metod, f1, hamming, vreme_s)."""
     with open(save_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["mod", "metod", "f1", "hamming", "vreme_s"])
-        for mode, method, f1, hamming, elapsed in summary_rows:
-            writer.writerow([mode, method, f"{f1:.4f}", f"{hamming:.4f}", f"{elapsed:.1f}"])
+        writer.writerow(["metod", "f1", "hamming", "vreme_s"])
+        for method, f1, hamming, elapsed in rows:
+            writer.writerow([method, f"{f1:.4f}", f"{hamming:.4f}", f"{elapsed:.1f}"])
 
 
 def plot_overall_table(rows, title, save_path):
@@ -338,8 +306,10 @@ def main():
         num_encoder_layers=saved_args.get("num_layers"),
         dim_feedforward=saved_args.get("dim_feedforward"),
         dropout=saved_args.get("dropout", 0.0),
-        # checkpointi sa diplomskog nemaju ovaj kljuc - svi su imali nauceno poziciono kodiranje
+        # checkpointi sa diplomskog nemaju ove kljuceve - svi su imali nauceno poziciono
+        # kodiranje i legacy linear ulazni enkoder
         pos_encoding=saved_args.get("pos_encoding", "learned"),
+        input_encoder=saved_args.get("input_encoder", "linear"),
     ).to(device)
     model.load_state_dict(checkpoint["model_state"])
 
@@ -352,42 +322,38 @@ def main():
     os.makedirs(args.output_dir, exist_ok=True)
     stem = os.path.splitext(os.path.basename(args.checkpoint))[0]
 
-    summary_rows = []
+    overall_rows  = []
+    f1_by_method  = {}
+    ham_by_method = {}
 
-    for tag, label, f1_idx, ham_idx in MODES:
-        overall_rows  = []
-        f1_by_method  = {}
-        ham_by_method = {}
+    for method, (records, elapsed) in method_records.items():
+        f1, hamming = aggregate_overall(records)
+        overall_rows.append((method, f1, hamming, elapsed))
 
-        for method, (records, elapsed) in method_records.items():
-            f1, hamming = aggregate_overall(records, f1_idx, ham_idx)
-            overall_rows.append((method, f1, hamming, elapsed))
-            summary_rows.append((tag, method, f1, hamming, elapsed))
+        f1_by_n, ham_by_n = aggregate_by_items(records)
+        f1_by_method[method]  = f1_by_n
+        ham_by_method[method] = ham_by_n
 
-            f1_by_n, ham_by_n = aggregate_by_items(records, f1_idx, ham_idx)
-            f1_by_method[method]  = f1_by_n
-            ham_by_method[method] = ham_by_n
-
-        plot_overall_table(
-            overall_rows,
-            f"IITA vs KST Transformer - {label}",
-            os.path.join(args.output_dir, f"iita_comparison_{stem}_{tag}_overall.png"),
-        )
-        plot_metric_by_items(
-            f1_by_method, "F1 score",
-            f"F1 po broju pitanja - {label}",
-            os.path.join(args.output_dir, f"iita_comparison_{stem}_{tag}_f1_by_items.png"),
-        )
-        plot_metric_by_items(
-            ham_by_method, "Hamming loss",
-            f"Hamming loss po broju pitanja - {label}",
-            os.path.join(args.output_dir, f"iita_comparison_{stem}_{tag}_hamming_by_items.png"),
-        )
-        print_overall_table(overall_rows, label)
-        print(f"  Sacuvano: iita_comparison_{stem}_{tag}_{{overall,f1_by_items,hamming_by_items}}.png")
+    plot_overall_table(
+        overall_rows,
+        f"IITA vs KST Transformer - {LABEL}",
+        os.path.join(args.output_dir, f"iita_comparison_{stem}_overall.png"),
+    )
+    plot_metric_by_items(
+        f1_by_method, "F1 score",
+        f"F1 po broju pitanja - {LABEL}",
+        os.path.join(args.output_dir, f"iita_comparison_{stem}_f1_by_items.png"),
+    )
+    plot_metric_by_items(
+        ham_by_method, "Hamming loss",
+        f"Hamming loss po broju pitanja - {LABEL}",
+        os.path.join(args.output_dir, f"iita_comparison_{stem}_hamming_by_items.png"),
+    )
+    print_overall_table(overall_rows)
+    print(f"  Sacuvano: iita_comparison_{stem}_{{overall,f1_by_items,hamming_by_items}}.png")
 
     summary_path = os.path.join(args.output_dir, f"iita_comparison_{stem}_summary.csv")
-    save_summary_csv(summary_path, summary_rows)
+    save_summary_csv(summary_path, overall_rows)
     print(f"\nSve vrednosti: {summary_path}")
 
     print(f"\nCheckpoint: epoha {checkpoint.get('epoch', '?')} | "

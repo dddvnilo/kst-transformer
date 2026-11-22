@@ -4,6 +4,7 @@ Random search za hiperparametre
 Primer pokretanja:
   python random_search.py
   python random_search.py --trials 30 --epochs 40
+  python random_search.py --closure-loss --input-encoder set
 """
 
 import argparse
@@ -14,7 +15,7 @@ import random
 import torch
 import torch.nn.functional as F
 
-from kst.model import KSTTransformer
+from kst.model import KSTTransformer, POS_ENCODINGS, INPUT_ENCODERS
 from kst.dataset import make_dataloaders, make_loss_mask, make_lenient_loss_mask, make_closure_target
 from util.metrics import compute_pos_weight
 from util.paths import DATA_DIR, CHECKPOINT_DIR, resolve_path
@@ -32,7 +33,8 @@ def parse_args():
     parser.add_argument("--seed",        type=int,   default=42)
     parser.add_argument("--output",      type=str,   default=None,
                         help="Ime fajla u checkpoints/random_search/ ili puna putanja "
-                             "(podrazumevano se izvodi iz rezima: random_search_10items[_lenient|_closure].csv)")
+                             "(podrazumevano se izvodi iz rezima i arhitekture: "
+                             "random_search_10items[_lenient|_closure][_<input-encoder>_pos-<pos-encoding>].csv)")
     parser.add_argument("--history",     type=str,   default=None,
                         help="Ime fajla u checkpoints/random_search/ ili puna putanja - koristi se da se izbegnu ponovljene "
                              "kombinacije (podrazumevano se izvodi iz rezima)")
@@ -40,6 +42,10 @@ def parse_args():
                         help="Ne kaznjava u loss-u tranzitivno validne, ali nedirektne predikcije")
     parser.add_argument("--closure-loss", action="store_true", default=False,
                         help="Target je puno tranzitivno zatvorenje Y (model uci ceo skup implikacija)")
+    parser.add_argument("--pos-encoding",  type=str, default="none", choices=POS_ENCODINGS,
+                        help="Vrsta pozicionog kodiranja, kao u train.py (default: none)")
+    parser.add_argument("--input-encoder", type=str, default="linear", choices=INPUT_ENCODERS,
+                        help="Ulazni enkoder, kao u train.py (default: linear - legacy)")
     args = parser.parse_args()
     if args.lenient_loss and args.closure_loss:
         parser.error("--lenient-loss i --closure-loss se medjusobno iskljucuju: lenient izbacuje "
@@ -49,6 +55,11 @@ def parse_args():
     # (razlicit target, razlicita maska, razlicit pos_weight), a --history sluzi za
     # dedup unutar jednog rezima. Zato podrazumevana imena prate rezim.
     suffix = "_lenient" if args.lenient_loss else "_closure" if args.closure_loss else ""
+    # Isto vazi i za arhitekturu. Pretrage sa diplomskog su radjene sa naucenim pozicionim
+    # kodiranjem i legacy linear enkoderom - ta kombinacija zadrzava stara imena fajlova, a ostale
+    # dobijaju svoj sufiks, da se rezultati sa diplomskog ne bi prepisali.
+    if (args.pos_encoding, args.input_encoder) != ("learned", "linear"):
+        suffix += f"_{args.input_encoder}_pos-{args.pos_encoding}"
     if args.output is None:
         args.output = f"random_search_10items{suffix}.csv"
     if args.history is None:
@@ -137,7 +148,9 @@ def run_epoch(model, loader, optimizer, device, max_items, pos_weight, train: bo
     return total_loss / len(loader)
 
 
-def train_trial(hparams, train_loader, val_loader, students, max_items, device, epochs, patience, lenient: bool = False, closure: bool = False):
+def train_trial(hparams, train_loader, val_loader, students, max_items, device, epochs, patience,
+                lenient: bool = False, closure: bool = False,
+                pos_encoding: str = "none", input_encoder: str = "linear"):
     model = KSTTransformer(
         max_items=max_items,
         students=students,
@@ -146,6 +159,8 @@ def train_trial(hparams, train_loader, val_loader, students, max_items, device, 
         num_encoder_layers=hparams["num_layers"],
         dim_feedforward=hparams["dim_feedforward"],
         dropout=hparams["dropout"],
+        pos_encoding=pos_encoding,
+        input_encoder=input_encoder,
     ).to(device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=hparams["lr"])
@@ -213,7 +228,8 @@ def main():
     args = parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     regime = "closure" if args.closure_loss else ("lenient" if args.lenient_loss else "strict")
-    print(f"Device: {device}  |  Rezim: {regime}")
+    print(f"Device: {device}  |  Rezim: {regime}  |  "
+          f"pos_encoding: {args.pos_encoding}  |  input_encoder: {args.input_encoder}")
     print(f"Rezultati: {args.output}")
     print(f"Trials: {args.trials}  |  Max epoha po trialu: {args.epochs}  |  Patience: {args.patience}\n")
 
@@ -251,6 +267,8 @@ def main():
             epochs=args.epochs, patience=args.patience,
             lenient=args.lenient_loss,
             closure=args.closure_loss,
+            pos_encoding=args.pos_encoding,
+            input_encoder=args.input_encoder,
         )
 
         print(f"-> val_loss={best_val_loss:.4f}  (epoha {stopped_epoch})")

@@ -10,7 +10,7 @@ import torch
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
 
-from kst.model import KSTTransformer, POS_ENCODINGS
+from kst.model import KSTTransformer, POS_ENCODINGS, INPUT_ENCODERS
 from kst.dataset import make_dataloaders, make_loss_mask, make_lenient_loss_mask, make_closure_target
 from util.metrics import compute_pos_weight, compute_f1, compute_hamming
 from util.paths import ROOT_DIR, DATA_DIR, CHECKPOINT_DIR, resolve_path
@@ -32,6 +32,10 @@ def parse_args():
     parser.add_argument("--pos-encoding",    type=str,   default="none", choices=POS_ENCODINGS,
                         help="Vrsta pozicionog kodiranja. 'none' (default): model je permutaciono "
                              "ekvivarijantan po pitanjima; 'learned': nauceno, kao modeli sa diplomskog")
+    parser.add_argument("--input-encoder",   type=str,   default="linear", choices=INPUT_ENCODERS,
+                        help="Formiranje tokena pitanja. 'linear' (default): legacy Linear(students, d_model), "
+                             "broj studenata fiksiran; 'set': studenti kao skup (proseci i 2x2 tabele "
+                             "parova), proizvoljan broj studenata")
     parser.add_argument("--val-ratio",       type=float, default=0.2)
     parser.add_argument("--test-ratio",      type=float, default=0.1)
     parser.add_argument("--seed",            type=int,   default=42)
@@ -165,6 +169,7 @@ def main():
             dim_feedforward=args.dim_feedforward,
             dropout=args.dropout,
             pos_encoding=args.pos_encoding,
+            input_encoder=args.input_encoder,
         ).to(device)
 
         optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
