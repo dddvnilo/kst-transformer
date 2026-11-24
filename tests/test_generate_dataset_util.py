@@ -6,10 +6,13 @@ i generisanje sintetickog dataseta.
 import numpy as np
 
 from util.generate_dataset_util import (
+    ERROR_RATES,
     transitive_closure,
     transitive_reduction,
+    random_quasi_order,
     random_implications,
     generate_dataset,
+    generate_dataset_legacy,
 )
 
 
@@ -85,6 +88,86 @@ def test_closure_then_reduction_roundtrip():
     assert set(reduced) == set(edges)
 
 
+# ----------------------------------------------------------------------
+# Slucajan kvazi-poredak (normalna sema) i generator dataseta
+# ----------------------------------------------------------------------
+
+def test_random_quasi_order_is_closed_without_self_loops():
+    for seed in range(20):
+        np.random.seed(seed)
+        impl = random_quasi_order(6)
+        assert set(transitive_closure(impl, 6)) == set(impl)
+        assert all(i != j for (i, j) in impl)
+
+
+def test_random_quasi_order_delta_controls_density(monkeypatch):
+    # delta = 0 -> prazna relacija; delta = 1 -> svi parovi u oba smera (sva pitanja ekvivalentna)
+    monkeypatch.setattr("util.generate_dataset_util.DELTA_MEAN", 0.0)
+    monkeypatch.setattr("util.generate_dataset_util.DELTA_STD", 0.0)
+    assert random_quasi_order(5) == []
+
+    monkeypatch.setattr("util.generate_dataset_util.DELTA_MEAN", 1.0)
+    monkeypatch.setattr("util.generate_dataset_util.DELTA_MAX", 1.0)
+    assert set(random_quasi_order(5)) == {(i, j) for i in range(5) for j in range(5) if i != j}
+
+
+def test_random_quasi_order_can_produce_equivalent_items():
+    # za razliku od legacy generatora (DAG), parovi mogu uci u oba smera
+    found = False
+    for seed in range(200):
+        np.random.seed(seed)
+        impl = set(random_quasi_order(6))
+        if any((j, i) in impl for (i, j) in impl):
+            found = True
+            break
+    assert found
+
+
+def test_generate_dataset_adj_is_closure_with_equivalent_items(monkeypatch):
+    # Y je puno zatvorenje kvazi-poretka, ukljucujuci veze u oba smera za ekvivalentna pitanja
+    fixed = transitive_closure([(0, 1), (1, 0), (1, 2)], 3)  # 0 <-> 1 -> 2
+
+    monkeypatch.setattr("util.generate_dataset_util.random_quasi_order", lambda items: fixed)
+
+    _, adj_matrices, item_counts, _ = generate_dataset(
+        num_samples=3, max_items=3, min_items=3, student_size=10,
+    )
+
+    expected = np.zeros((3, 3), dtype=np.int8)
+    for (i, j) in fixed:
+        expected[i, j] = 1
+
+    assert len(adj_matrices) == 3
+    for a in adj_matrices:
+        assert np.array_equal(a, expected)
+
+
+def test_generate_dataset_error_rate_is_shared_and_from_study(monkeypatch):
+    # careless error = lucky guess = tau, a tau je jedna od vrednosti iz studije
+    captured = []
+
+    def fake_simu(items, size, ce, lg, delta, imp):
+        captured.append((ce, lg))
+        return {"dataset": np.zeros((size, items), dtype=np.int8)}
+
+    monkeypatch.setattr("util.generate_dataset_util.simu", fake_simu)
+
+    np.random.seed(0)
+    responses, _, _, error_rates = generate_dataset(
+        num_samples=30, max_items=4, min_items=2, student_size=5,
+    )
+
+    assert len(captured) == len(error_rates) == len(responses) == 30
+    for (ce_val, lg_val), tau in zip(captured, error_rates):
+        assert ce_val == lg_val == tau
+        assert tau in ERROR_RATES
+    assert all(r.shape == (5, 4) for r in responses)
+
+
+# ----------------------------------------------------------------------
+# LEGACY generator sa diplomskog (ne koristi se, ali ostaje u kodu)
+# ----------------------------------------------------------------------
+
 def test_random_implications_produces_dag():
     # impl_closed i impl_reduced nikad ne sadrze (i,j) i (j,i) istovremeno (nema ciklusa)
     for seed in range(20):
@@ -116,7 +199,7 @@ def test_generate_dataset_output_shapes():
     # adj_matrices: (max_items, max_items)
     # item_counts: svaka vrednost u [min_items, max_items]
     np.random.seed(0)
-    responses, adj_matrices, item_counts = generate_dataset(
+    responses, adj_matrices, item_counts = generate_dataset_legacy(
         num_samples=10, max_items=4, min_items=2, student_size=15,
         ce=0.1, lg=0.05,
     )
@@ -131,7 +214,7 @@ def test_generate_dataset_padding_is_zero():
     # kolone u response matrici i redovi/kolone u adj matrici van item_count
     # moraju biti sve nule
     np.random.seed(0)
-    responses, adj_matrices, item_counts = generate_dataset(
+    responses, adj_matrices, item_counts = generate_dataset_legacy(
         num_samples=10, max_items=5, min_items=2, student_size=15,
         ce=0.1, lg=0.05,
     )
@@ -154,7 +237,7 @@ def test_generate_dataset_adj_matches_impl_reduced(monkeypatch):
         "util.generate_dataset_util.random_implications", fake_random_implications
     )
 
-    _, adj_matrices, item_counts = generate_dataset(
+    _, adj_matrices, item_counts = generate_dataset_legacy(
         num_samples=3, max_items=3, min_items=3, student_size=10,
         ce=0.1, lg=0.05,
     )
@@ -177,7 +260,7 @@ def test_generate_dataset_ce_lg_within_clip_bounds(monkeypatch):
 
     monkeypatch.setattr("util.generate_dataset_util.simu", fake_simu)
 
-    generate_dataset(
+    generate_dataset_legacy(
         num_samples=20, max_items=3, min_items=3, student_size=5,
         ce=10.0, lg=10.0, ce_std=5.0, lg_std=5.0,
     )

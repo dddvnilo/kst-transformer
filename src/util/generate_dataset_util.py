@@ -2,6 +2,19 @@ import numpy as np
 from learning_spaces.kst import simu
 
 
+# Parametri iz Sargin (2009), disertacija "Data Analysis Methods in Knowledge Space Theory",
+# sek. 3.4.1, str. 32-34 (prva simulaciona studija, Sargin & Unlu 2009a).
+
+# Normalna sema za delta, verovatnocu da par (i, j) udje u relaciju; kalibrisana za 9 pitanja
+DELTA_MEAN = 0.16
+DELTA_STD  = 0.06
+DELTA_MAX  = 0.3
+
+# Stope greske tau (careless error = lucky guess); u studiji faktor eksperimenta, kod nas se
+# bira uniformno po uzorku
+ERROR_RATES = (0.03, 0.05, 0.08, 0.10, 0.15, 0.20)
+
+
 # Tranzitivno zatvorenje
 
 def transitive_closure(impl_list, items):
@@ -46,7 +59,28 @@ def transitive_reduction(imp):
     return implications
 
 
-# Generisanje random implikacija
+# Generisanje slucajnog kvazi-poretka
+
+def random_quasi_order(items):
+    """
+    Slucajan kvazi-poredak po normalnoj semi (Sargin & Unlu, 2009a): jedna delta za ceo graf,
+    svaki par (i, j), i != j, ulazi sa verovatnocom delta, pa tranzitivno zatvorenje.
+    Implikacija (i, j) znaci: j zahteva i kao prerequisit. Parovi mogu uci u oba smera, pa su
+    moguca ekvivalentna pitanja.
+
+    Vraca puno tranzitivno zatvorenje kao listu implikacija, bez refleksivnih parova.
+    """
+    delta = float(np.clip(np.random.normal(DELTA_MEAN, DELTA_STD), 0.0, DELTA_MAX))
+
+    added = np.random.rand(items, items) < delta
+    np.fill_diagonal(added, False)
+    impl = [(int(i), int(j)) for i, j in zip(*np.nonzero(added))]
+
+    return transitive_closure(impl, items)
+
+
+# LEGACY - generator grafova sa diplomskog, ne koristi se (zamenjen sa random_quasi_order).
+# Pravi samo parcijalne poretke (DAG), a broj implikacija bira uniformno od 0 do svih parova.
 
 def random_implications(items, min_impl=0, max_impl=None):
     """
@@ -79,6 +113,93 @@ def random_implications(items, min_impl=0, max_impl=None):
 # Generator dataseta
 
 def generate_dataset(
+    num_samples: int,
+    max_items: int,
+    min_items: int,
+    student_size: int,
+    weighted: bool = False,
+):
+    """
+    Generise `num_samples` primera.
+
+    Svaki primer:
+      - nasumično bira broj pitanja iz [min_items, max_items] (uniformno ili tezinski)
+      - generise slucajan kvazi-poredak (random_quasi_order)
+      - bira stopu greske tau iz ERROR_RATES; careless error = lucky guess = tau
+      - simulira response matricu studenata (simu)
+      - padduje response matricu na `max_items` kolona
+      - adj matrica sadrzi PUNO TRANZITIVNO ZATVORENJE (Hasse dijagram nije jednoznacan kad
+        postoje ekvivalentna pitanja)
+
+    Return:
+        responses:    list of np.array oblika (student_size, max_items)
+        adj_matrices: list of np.array oblika (max_items, max_items)
+        item_counts:  list of int - stvarni broj pitanja u svakom primeru
+        error_rates:  list of float - stopa greske tau u svakom primeru
+    """
+
+    pad_to = max_items
+
+    item_range = list(range(min_items, max_items + 1))
+    if weighted:
+        w = np.arange(1, len(item_range) + 1, dtype=float)  # [1, 2, 3, ...]
+        probs = w / w.sum()
+    else:
+        probs = None  # uniformno
+
+    responses = []
+    adj_matrices = []
+    item_counts = []
+    error_rates = []
+
+    for idx in range(num_samples):
+        n_items = int(np.random.choice(item_range, p=probs))
+        tau = float(np.random.choice(ERROR_RATES))
+
+        # simu ocekuje tranzitivno zatvorenu relaciju - random_quasi_order je vec vraca takvu
+        impl_closed = random_quasi_order(n_items)
+
+        try:
+            result = simu(
+                items=n_items,
+                size=student_size,
+                ce=tau,
+                lg=tau,
+                delta=0.0,       # delta nije relevantna kad prosledjujemo imp
+                imp=impl_closed,
+            )
+        except Exception:
+            continue
+
+        response = result['dataset']  # (student_size, n_items)
+
+        adj = np.zeros((n_items, n_items), dtype=np.int8)
+        for (pre, item) in impl_closed:
+            adj[pre][item] = 1
+
+        if n_items < pad_to:
+            pad_cols = np.zeros((student_size, pad_to - n_items), dtype=np.int8)
+            response = np.hstack([response, pad_cols])
+
+        full_adj = np.zeros((pad_to, pad_to), dtype=np.int8)
+        full_adj[:n_items, :n_items] = adj
+
+        responses.append(response)
+        adj_matrices.append(full_adj)
+        item_counts.append(n_items)
+        error_rates.append(tau)
+
+        log_step = max(1, num_samples // 10)
+        if (idx + 1) % log_step == 0:
+            print(f"  Generisano {idx + 1}/{num_samples} primera")
+
+    return responses, adj_matrices, item_counts, error_rates
+
+
+# LEGACY - generator dataseta sa diplomskog, ne koristi se (zamenjen sa generate_dataset).
+# Grafovi iz random_implications (DAG), Y = Hasse dijagram, ce i lg iz normalne raspodele po uzorku.
+
+def generate_dataset_legacy(
     num_samples: int,
     max_items: int,
     min_items: int,

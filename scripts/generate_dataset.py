@@ -3,17 +3,18 @@ KST Dataset Generator
 
 Generise podatke u obliku:
   INPUT:  response matrica studenata (size x items) - binarna
-  OUTPUT: adjacency matrica prerequisita (items x items) - binarna
+  OUTPUT: adjacency matrica prerequisita (items x items) - binarna, puno tranzitivno zatvorenje
+          (kvazi-poredak)
+
+Generator i izvor parametara: src/util/generate_dataset_util.py.
 
 Koristi:
   python generate_dataset.py \
-      --num-samples 10000 \
-      --max-items 5 \
+      --num-samples 80000 \
+      --max-items 10 \
       --min-items 2 \
-      --size 200 \
-      --ce 0.1 \
-      --lg 0.05 \
-      --output dataset.npz
+      --size 500 \
+      --weighted
 """
 
 import argparse
@@ -24,11 +25,12 @@ from pathlib import Path
 import numpy as np
 import yaml
 
-from util.generate_dataset_util import generate_dataset
+from util.generate_dataset_util import generate_dataset, DELTA_MEAN, DELTA_STD, DELTA_MAX, ERROR_RATES
 from util.paths import DATA_DIR, resolve_path
 
 
-def write_dataset_card(output_path: Path, args: argparse.Namespace, item_counts: np.ndarray) -> None:
+def write_dataset_card(output_path: Path, args: argparse.Namespace, item_counts: np.ndarray,
+                       Y: np.ndarray, error_rates: np.ndarray) -> None:
     """Pise <output_path bez .npz>.md - YAML frontmatter + markdown, HF Dataset Card stil."""
     try:
         git_commit = subprocess.run(
@@ -55,19 +57,54 @@ def write_dataset_card(output_path: Path, args: argparse.Namespace, item_counts:
         pct = 100 * cnt / n if n > 0 else 0.0
         distribution_rows.append(f"| {k} | {cnt} | {pct:.1f}% |")
 
+    error_rows = []
+    for tau in ERROR_RATES:
+        cnt = int(np.isclose(error_rates, tau).sum())
+        pct = 100 * cnt / n if n > 0 else 0.0
+        error_rows.append(f"| {tau:.2f} | {cnt} | {pct:.1f}% |")
+
+    graph_rows = []
+    for k in range(args.min_items, args.max_items + 1):
+        Yk = Y[item_counts == k][:, :k, :k].astype(bool)
+        if len(Yk) == 0:
+            continue
+        sizes = Yk.sum(axis=(1, 2))
+        has_equivalent = (Yk & Yk.transpose(0, 2, 1)).any(axis=(1, 2))
+        graph_rows.append(
+            f"| {k} | {sizes.mean():.1f} / {k * (k - 1)} | {100 * (sizes == 0).mean():.1f}% "
+            f"| {100 * has_equivalent.mean():.1f}% |"
+        )
+
     body = (
         f"\n# {output_path.stem}\n\n"
         "## Summary\n"
         "Sinteticki dataset za KST Transformer - simulirani odgovori studenata, "
         "generisani sa `scripts/generate_dataset.py`.\n\n"
+        "## Generator\n"
+        f"- Grafovi: normalna sema (Sargin & Unlu, 2009a) - delta ~ N({DELTA_MEAN}, {DELTA_STD}), "
+        f"odseceno na [0, {DELTA_MAX}]; svaki par (i, j), i != j, ulazi sa verovatnocom delta; "
+        "pa tranzitivno zatvorenje. Rezultat je kvazi-poredak (moguca ekvivalentna pitanja).\n"
+        f"- Sum: careless error = lucky guess = tau, tau uniformno iz {list(ERROR_RATES)} po uzorku.\n"
+        "- Izvor: Sargin (2009), disertacija, sek. 3.4.1 "
+        "(`notes/learning spaces learning material/35097045.pdf`).\n\n"
         "## Structure\n"
         f"- `X`: (N, {args.size}, {args.max_items}) float32 - binarna response matrica, paddovana nulama\n"
-        f"- `Y`: (N, {args.max_items}, {args.max_items}) float32 - Hasse dijagram (tranzitivna redukcija)\n"
-        "- `item_counts`: (N,) int64 - stvarni broj pitanja po uzorku\n\n"
+        f"- `Y`: (N, {args.max_items}, {args.max_items}) float32 - PUNO TRANZITIVNO ZATVORENJE "
+        "(kvazi-poredak; ekvivalentna pitanja imaju veze u oba smera), dijagonala = 0\n"
+        "- `item_counts`: (N,) int64 - stvarni broj pitanja po uzorku\n"
+        "- `error_rates`: (N,) float32 - stopa greske tau po uzorku\n\n"
         "## Distribucija broja pitanja\n"
         "| items | count | % |\n"
         "|---|---|---|\n"
-        + "\n".join(distribution_rows) + "\n"
+        + "\n".join(distribution_rows) + "\n\n"
+        "## Distribucija stope greske tau\n"
+        "| tau | count | % |\n"
+        "|---|---|---|\n"
+        + "\n".join(error_rows) + "\n\n"
+        "## Grafovi po broju pitanja\n"
+        "| items | prosecno implikacija / max | prazna relacija | sa ekvivalentnim pitanjima |\n"
+        "|---|---|---|---|\n"
+        + "\n".join(graph_rows) + "\n"
     )
 
     card_path = output_path.with_suffix(".md")
@@ -81,12 +118,13 @@ def write_dataset_card(output_path: Path, args: argparse.Namespace, item_counts:
 
 
 def build_default_output(args: argparse.Namespace) -> str:
-    """Konstruise default ime .npz fajla iz parametara generisanja 
-    npr. kst_dataset_10items_80k_weighted.npz)."""
+    """Konstruise default ime .npz fajla iz parametara generisanja
+    (npr. kst_dataset_2-10items_80k_weighted_daks.npz). Sufiks "_daks" sprecava prepisivanje
+    legacy dataset-a sa diplomskog."""
     samples_tag = f"{args.num_samples // 1000}k" if args.num_samples % 1000 == 0 else str(args.num_samples)
     items_tag = f"{args.max_items}items" if args.min_items == args.max_items else f"{args.min_items}-{args.max_items}items"
     weighted_tag = "weighted" if args.weighted else "uniform"
-    filename = f"kst_dataset_{items_tag}_{samples_tag}_{weighted_tag}.npz"
+    filename = f"kst_dataset_{items_tag}_{samples_tag}_{weighted_tag}_daks.npz"
     return str(DATA_DIR / filename)
 
 
@@ -102,14 +140,6 @@ def main():
                         help="Minimalan broj pitanja (default: 2)")
     parser.add_argument("--size",        type=int,   default=500,
                         help="Broj studenata po simulaciji (default: 500)")
-    parser.add_argument("--ce",          type=float, default=0.1,
-                        help="Careless error verovatnoca (default: 0.1)")
-    parser.add_argument("--lg",          type=float, default=0.05,
-                        help="Lucky guess verovatnoca (default: 0.05)")
-    parser.add_argument("--ce-std",      type=float, default=0.03,
-                        help="Std za CE noise (default: 0.03)")
-    parser.add_argument("--lg-std",      type=float, default=0.02,
-                        help="Std za LG noise (default: 0.02)")
     parser.add_argument("--output",      type=str,   default=None,
                         help="Output fajl (.npz format) - samo ime (upisuje se u data/) ili puna putanja; "
                              "ako nije zadat, konstruise se automatski iz parametara (broj pitanja, broj uzoraka, weighted/uniform)")
@@ -137,31 +167,27 @@ def main():
         probs = [round(x / sum(w) * 100, 1) for x in w]
         print(f"  Tezine (linearne):       {dict(zip(range(args.min_items, args.max_items+1), probs))}%")
     print(f"  Broj studenata po primeru: {args.size}")
-    print(f"  Careless error:          {args.ce} (std={args.ce_std})")
-    print(f"  Lucky guess:             {args.lg} (std={args.lg_std})")
+    print(f"  Grafovi:                 delta ~ N({DELTA_MEAN}, {DELTA_STD}), odseceno na [0, {DELTA_MAX}]")
+    print(f"  Stopa greske tau:        {list(ERROR_RATES)} (careless error = lucky guess)")
     print(f"  Output:                  {args.output}")
     print(f"{'='*55}\n")
 
     print("- Pocetak generisanja -")
-    responses, adj_matrices, item_counts = generate_dataset(
+    responses, adj_matrices, item_counts, error_rates = generate_dataset(
         num_samples=args.num_samples,
         max_items=args.max_items,
         min_items=args.min_items,
         student_size=args.size,
-        ce=args.ce,
-        lg=args.lg,
-        ce_std=args.ce_std,
-        lg_std=args.lg_std,
         weighted=args.weighted,
     )
     print("- Kraj generisanja -")
 
     n = len(responses)
-    pad = args.max_items
 
-    X = np.stack(responses,    axis=0)        # (N, size_students, max_items)
-    Y = np.stack(adj_matrices, axis=0)        # (N, max_items, max_items)
-    C = np.array(item_counts,  dtype=np.int64) # (N,)
+    X = np.stack(responses,    axis=0)            # (N, size_students, max_items)
+    Y = np.stack(adj_matrices, axis=0)            # (N, max_items, max_items)
+    C = np.array(item_counts,  dtype=np.int64)    # (N,)
+    T = np.array(error_rates,  dtype=np.float32)  # (N,)
 
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -170,6 +196,7 @@ def main():
         X=X,
         Y=Y,
         item_counts=C,
+        error_rates=T,
     )
 
     size_mb = output_path.stat().st_size / 1024 / 1024
@@ -184,7 +211,7 @@ def main():
         cnt = (C == k).sum()
         print(f"  {k} items: {cnt} primera ({100*cnt/n:.1f}%)")
 
-    write_dataset_card(output_path, args, C)
+    write_dataset_card(output_path, args, C, Y, T)
 
     print(f"\nQuick check (prvi primer):")
     print(f"  item_count = {C[0]}")

@@ -1,0 +1,23 @@
+# "set" model na datasetu sa kvazi-porecima - poredjenje sa closure_no_positional_encoding_daks.toml.
+# Jedina razlika u odnosu na closure_set_encoder.toml je dataset.
+# Pokretanje: python scripts/train.py --config configs/closure_set_encoder_daks.toml
+
+data = "kst_dataset_2-10items_80k_weighted_daks.npz"
+closure_loss = true
+pos_encoding = "none"
+input_encoder = "set"
+
+epochs = 200
+patience = 200
+batch_size = 128
+lr = 0.000662
+
+d_model = 256
+nhead = 8
+num_layers = 3
+dim_feedforward = 256
+dropout = 0.1
+
+val_ratio = 0.2
+test_ratio = 0.1
+seed = 42
