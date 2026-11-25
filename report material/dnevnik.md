@@ -8,13 +8,9 @@ IITA. Ovaj dnevnik opisuje dva zadatka iz proširenja na masteru (novembar 2026)
 2. **Složeniji dataset.** Generator je urađen na grani `feature/complex-dataset`; generisanje
    punog dataseta i treninzi su sledeći korak.
 
-Svuda je naznačeno šta je provereno (kod, merenje, literatura), a šta je hipoteza.
-
 ---
 
 ## Deo 1: Uklanjanje ograničenja broja studenata
-
-*Period: 2026-11-01 do 2026-11-22. Grana `feature/student-set-encoder`, spojena u `main`.*
 
 ### 1.1 Polazni problem
 
@@ -42,45 +38,8 @@ Polazna ideja je DeepSets (Zaheer et al., 2017): funkcija nad skupom ima oblik
 $f(X) = \rho\big(\mathrm{agg}_{x \in X}\, \varphi(x)\big)$. Kad je agregacija prosek, rešava i broj
 i redosled studenata istom operacijom. Prosek je bolji od zbira, jer zbir raste sa $N$.
 
-### 1.3 Prvi dizajn („B") i zašto je odbačen
 
-Skica:
-
-1. svaki odgovor dobija embedding $E[x_{si}]$, oblika (B, N, n, d);
-2. attention preko pitanja unutar reda svakog studenta (row attention);
-3. prosek po studentima daje (B, n, d);
-4. postojeći encoder i glava nad parovima.
-
-**Rupa.** Bez pozicionog kodiranja, i sa embedding-om koji vidi samo bit, pitanja su unutar reda
-**anonimna**. Row attention vidi red kao vreću („dve jedinice, dve nule"), pa izlaz ćelije zavisi
-samo od njenog odgovora i od broja pitanja koja je student rešio:
-
-$$h_{si} = g(x_{si},\, r_s), \qquad r_s = \sum_j x_{sj}$$
-
-Ćelija zna **koliko** je pitanja student rešio, ali ne i **koja**. Informacija se gubi već u
-koraku 2, a ne u proseku.
-
-**Kontraprimer** sa 4 pitanja, gde polovina studenata ima jedan red, a polovina drugi:
-
-| test | red 1 | red 2 | šta ide zajedno |
-|---|---|---|---|
-| X | $[1,1,0,0]$ | $[0,0,1,1]$ | A sa B |
-| Y | $[1,0,1,0]$ | $[0,1,0,1]$ | A sa C |
-
-U oba testa svako pitanje je rešila polovina studenata, i svi koji su ga rešili imaju zbir 2.
-Zato su sva četiri tokena identična i u X i u Y, i model mora da da isti odgovor za par (A, B) i
-za par (A, C). Ranija ilustracija sa samo 2 pitanja ovo nije otkrila, jer kod 2 pitanja sopstveni
-odgovor i zbir reda jednoznačno određuju drugi odgovor.
-
-**Zašto legacy model ovo nema.** Attention skor između pitanja $i$ i $j$ u legacy modelu je
-bilinearna forma po studentima:
-
-$$q_i^\top k_j = x_i^\top M\, x_j, \qquad M = W^\top W_Q^\top W_K W$$
-
-Za $M = I$ to je broj studenata koji su rešili oba pitanja. Indeks studenta je „adresa" koja
-povezuje kolone. Zato legacy model radi, i zato je vezan za 500 studenata.
-
-### 1.4 Usvojeni dizajn: statistika po paru pitanja (`set` enkoder)
+### 1.3 `set` enkoder
 
 Ključni uvid: vezu između pitanja treba računati **direktno za svaki par**, preko studenata. Tada
 identitet para dolazi iz indeksa matrice $(i, j)$, a ne iz sadržaja tokena.
@@ -88,10 +47,7 @@ identitet para dolazi iz indeksa matrice $(i, j)$, a ne iz sadržaja tokena.
 **2×2 tabela po paru.** Za svaki par: udeo studenata sa odgovorom $a$ na pitanje $i$ i odgovorom
 $b$ na pitanje $j$:
 
-$$P_{ij}(a,b) = \frac{1}{N}\,\#\{\, s : x_{si} = a,\ x_{sj} = b \,\}, \qquad a, b \in \{0, 1\}$$
-
-Ovo je tačno statistika nad kojom radi IITA. Kontraprimeri za implikaciju su jedna ćelija tabele,
-$P_{ij}(0,1)$.
+$$P_{ij}(a,b) = \frac{1}{N}\,\\#\{\, s : x_{si} = a,\ x_{sj} = b \,\}, \qquad a, b \in \{0, 1\}$$
 
 **Matrica parova po attention glavi** $h$:
 
@@ -122,8 +78,6 @@ preraspoređivanje pažnje ne pomaže. Razliku tada nosi $S_{ij}$ u glavi.
   $c_{ab} = q(a)^\top k(b)/\sqrt{d_k}$, pa je naš $S$ tačno taj logit u prvom sloju.
 - **AlphaFold2 Evoformer**, iz memorije, nije provereno. Operacija *outer product mean* i
   *pair bias* u attention-u su ista ideja kao naše $P_{ij}$ i bias.
-- Ranije razmatrana „opcija A" (statistike izvedene unapred) je u prvom sloju isto što i ovaj
-  dizajn, samo sa naučenim koeficijentima.
 
 ### 1.5 Implementacija
 
@@ -206,8 +160,6 @@ je jedno pokretanje na jednom grafu.
 ---
 
 ## Deo 2: Složeniji dataset
-
-*Period: od 2026-11-22. Grana `feature/complex-dataset`.*
 
 ### 2.1 Polazni problem
 
@@ -311,14 +263,3 @@ ostaje otvoreno.
 - **Mali testovi su često prazni**, jer je šema kalibrisana za 9 pitanja.
 
 Ovo je osobina izabrane šeme, ne greška implementacije.
-
-### 2.6 Sledeći koraci
-
-1. Generisati pun dataset (80k, procena oko 35 min):
-   `python scripts/generate_dataset.py --num-samples 80000 --max-items 10 --min-items 2 --size 500 --weighted`
-2. Trenirati oba modela na njemu (configi iz 2.4) i ponoviti evaluaciju sa IITA
-   (`eval_iita.py --data kst_dataset_2-10items_80k_weighted_daks.npz`).
-3. Dataset sa promenljivim brojem studenata (oslonac: 50–6400 ispitanika iz studije). Odluke:
-   format (padding plus maska po studentima, ili batch-ovi sa istim $N$) i raspodela $N$.
-4. Kasnije: 30 pitanja (`imp2state` nabraja sva stanja, do $2^n$); eventualno reprezentativno
-   uzorkovanje (induktivni algoritam); analiza datasetova po kompleksnosti.
